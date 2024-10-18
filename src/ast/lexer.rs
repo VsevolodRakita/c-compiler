@@ -18,10 +18,12 @@ pub enum TokenKind{
     Keyword(Keyword),
     Number(usize),
     Identifier(String),
-    Plus,//
     Minus,//
     Complement,
     LogicNegation,
+    Plus,//
+    Star,
+    Division,
     Bad,
 }
 
@@ -76,12 +78,14 @@ impl<'a> Iterator for Lexer<'a>{
             '(' => {self.chars.next(); return Some(Token::new(TokenKind::OpenParenthesis))},
             ')' => {self.chars.next(); return Some(Token::new(TokenKind::CloseParenthesis))},
             ';' => {self.chars.next(); return Some(Token::new(TokenKind::Semicolon))},
-            '+' => {self.chars.next(); return Some(Token::new(TokenKind::Plus))},
             '-' => {self.chars.next(); return Some(Token::new(TokenKind::Minus))},
             '~' => {self.chars.next(); return Some(Token::new(TokenKind::Complement))},
             '!' => {self.chars.next(); return Some(Token::new(TokenKind::LogicNegation))},
+            '+' => {self.chars.next(); return Some(Token::new(TokenKind::Plus))},
+            '*' => {self.chars.next(); return Some(Token::new(TokenKind::Star))},
+            '/' => {self.chars.next(); return Some(Token::new(TokenKind::Division))},
             _ => {
-                let symbols=HashSet::from(['{','}','(',')', ';','+','-']);
+                let symbols=HashSet::from(['{','}','(',')', ';','-','~','!','+','*','/']);
                 let keywords:HashMap<_,_> = vec![("int".to_string(),Keyword::Int),("return".to_string(), Keyword::Return)].iter().cloned().collect();
                 if current_char.is_numeric(){
                     let mut bad= false;
@@ -181,4 +185,14 @@ mod tests {
         assert_eq!(v,[Token::new(TokenKind::Minus),Token::new(TokenKind::LogicNegation),Token::new(TokenKind::Complement),Token::new(TokenKind::LogicNegation),
             Token::new(TokenKind::Complement),Token::new(TokenKind::Complement),Token::new(TokenKind::Number(5)),Token::new(TokenKind::Semicolon)]);
     }
+
+    #[test]
+    fn lexer5() {
+        let input="1*7".to_string();
+        let lex=Lexer::new(&input);
+        let v:Vec<Token>=lex.collect();
+        assert_eq!(v,[Token::new(TokenKind::Number(1)),Token::new(TokenKind::Star),Token::new(TokenKind::Number(7))]);
+    }
+
+
 }

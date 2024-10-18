@@ -1,6 +1,6 @@
 # c-compiler
 A simple windows c compiler implemented in rust for educational purposes.
-Currently supports only programs consisting of one function, with a single return statement and expression consisting of an int and unary operators (have to start somewhere!).
+Currently supports only programs consisting of one function, with a single return statement and expression consisting of an arithmetic expression.
 
 # To run
 Clone the repository to your machine, and type

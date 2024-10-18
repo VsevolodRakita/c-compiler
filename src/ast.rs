@@ -2,11 +2,13 @@
 <program> ::= <function>
 <function> ::= "int" <id> "(" ")" "{" <statement> "}"
 <statement> ::= "return" <expression> ";"
-<expression> ::= <unary_op> <exp> | <int>
+<expression> ::= <term> | <term><expression_aux>
+<expression_aux> ::= ("+" | "-") <term> | ("+" | "-") <term><expression_aux>
+<term> ::= <factor> |<factor><term_aux>
+<term_aux> ::= ("*" | "/") <factor> | ("*" | "/") <factor><term_aux>
+<factor> ::= "(" <expression> ")" | <unary_op> <factor> | <int>
 <unary_op> ::= "!" | "~" | "-"
 */
-
-use std::rc::Rc;
 
 pub mod lexer;
 pub mod parser;
@@ -99,73 +101,51 @@ impl AstStatement {
 //----------------------ASTExpression--------------------------------------------------
 #[derive(Debug,PartialEq,Clone)]
 pub enum AstExpression{
-    UnaryOpExpression(AstExpressionUnaryOpExpression),
-    Int(AstExpressionInt),
+    Term(Box<AstTerm>),
+    TermExpAux(Box<AstTerm>,Box<AstExpressionAux>),
 }
 
 #[derive(Debug,PartialEq,Clone)]
-pub struct AstExpressionUnaryOpExpression{
-    op: AstUnaryOp,
-    expression: Rc<AstExpression>,
+pub enum AstExpressionAux{
+    PlusTerm(Box<AstTerm>),
+    MinusTerm(Box<AstTerm>),
+    PlusTermAux(Box<AstTerm>,Box<AstExpressionAux>),
+    MinusTermAux(Box<AstTerm>,Box<AstExpressionAux>),
 }
 
-impl AstExpressionUnaryOpExpression{
-    pub fn new(op: AstUnaryOp, expression: AstExpression)->Self{
-        Self { 
-            op, 
-            expression: Rc::new(expression)
-        }
-    }
 
-    pub fn get_op(&self)->AstUnaryOp{
-        self.op.clone()
-    }
-
-    pub fn get_expression(&self)->Rc<AstExpression>{
-        Rc::clone(&self.expression)
-    }
+//----------------------ASTTerm--------------------------------------------------
+#[derive(Debug,PartialEq,Clone)]
+pub enum AstTerm{
+    Factor(Box<AstFactor>),
+    FactorAux(Box<AstFactor>,Box<AstTermAux>)
 }
 
 #[derive(Debug,PartialEq,Clone)]
-pub struct AstExpressionInt{
-    val: usize,
-
+pub enum AstTermAux{
+    TimesFactor(Box<AstFactor>),
+    DivideFactor(Box<AstFactor>),
+    TimesFactorAux(Box<AstFactor>,Box<AstTermAux>),
+    DivideFactorAux(Box<AstFactor>,Box<AstTermAux>),
 }
 
-impl AstExpressionInt {
-    pub fn new(val: usize)->Self{
-        Self{
-            val,
-        }
-    }
+//----------------------ASTFactor--------------------------------------------------
 
-    pub fn get_val(&self)->usize{
-        self.val
-    }
+#[derive(Debug,PartialEq,Clone)]
+pub enum AstFactor{
+    Expression(Box<AstExpression>),
+    UnaryOpFactor(AstUnaryOp,Box<AstFactor>),
+    Int(usize),
 }
+
+
+
 
 
 //----------------------ASTUnaryOp--------------------------------------------------
 #[derive(Debug,PartialEq,Clone,Copy)]
-pub enum UnaryOpType{
+pub enum AstUnaryOp{
     Minus,
     Complement,
     LogicNegation,
-}
-
-#[derive(Debug,PartialEq,Clone)]
-pub struct AstUnaryOp{
-    op_type: UnaryOpType,
-}
-
-impl AstUnaryOp {
-    pub fn new(op_type: UnaryOpType)->Self{
-        Self{
-            op_type,
-        }
-    }
-
-    pub fn get_type(&self)->UnaryOpType{
-        self.op_type
-    }
 }

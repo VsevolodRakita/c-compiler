@@ -85,28 +85,121 @@ impl Parser {
     }
 
     fn parse_expression(&mut self)->Option<AstExpression>{
+        if let Some(term) = self.parse_term() {
+            if let Some(aux) = self.parse_expression_aux(){
+                return Some(AstExpression::TermExpAux(Box::new(term), Box::new(aux)));
+            }
+            return Some(AstExpression::Term(Box::new(term)));
+        }
+        None
+    }
+
+    fn parse_expression_aux(&mut self)->Option<AstExpressionAux>{
         let original_position=self.current_pos;
         if self.parser_finished() || self.tokens[self.current_pos].is_identifier(){
             return None;
         }
-        if let Some(unary)=self.parse_unaryop(){
-            if let Some(exp)=self.parse_expression(){
-                return Some(AstExpression::UnaryOpExpression(AstExpressionUnaryOpExpression::new(unary, exp)));
-            }
-            else {
+        match self.tokens[self.current_pos].get_kind(){
+            TokenKind::Plus =>{
+                self.current_pos+=1;
+                if let Some(term)=self.parse_term(){
+                    if let Some(aux)=self.parse_expression_aux(){
+                        return Some(AstExpressionAux::PlusTermAux(Box::new(term), Box::new(aux)));
+                    }
+                    return Some(AstExpressionAux::PlusTerm(Box::new(term)));
+                }
                 self.current_pos=original_position;
                 return None;
             }
-        }
-        else{
-            match self.tokens[self.current_pos].get_kind() {
-                TokenKind::Number(x) => {
-                    self.current_pos+=1; 
-                    return Some(AstExpression::Int(AstExpressionInt::new(x)));
-                    },
-                _ => {self.current_pos=original_position; return None;}
+            TokenKind::Minus=>{
+                self.current_pos+=1;
+                if let Some(term)=self.parse_term(){
+                    if let Some(aux)=self.parse_expression_aux(){
+                        return Some(AstExpressionAux::MinusTermAux(Box::new(term), Box::new(aux)));
+                    }
+                    return Some(AstExpressionAux::MinusTerm(Box::new(term)));
+                }
+                self.current_pos=original_position;
+                return None;
             }
+            _ => return None,
+        }
+    }
 
+    fn parse_term(&mut self)->Option<AstTerm>{
+        if let Some(fact)=self.parse_factor(){
+            if let Some(aux)=self.parse_term_aux(){
+                return Some(AstTerm::FactorAux(Box::new(fact), Box::new(aux)));
+            }
+            else{
+                return Some(AstTerm::Factor(Box::new(fact)));
+            }
+        }
+        None
+    }
+
+    fn parse_term_aux(&mut self)->Option<AstTermAux>{
+        let original_position=self.current_pos;
+        if self.parser_finished() || self.tokens[self.current_pos].is_identifier(){
+            return None;
+        }
+        match self.tokens[self.current_pos].get_kind(){
+            TokenKind::Star =>{
+                self.current_pos+=1;
+                if let Some(fact)=self.parse_factor(){
+                    if let Some(aux)=self.parse_term_aux(){
+                        return Some(AstTermAux::TimesFactorAux(Box::new(fact), Box::new(aux)));
+                    }
+                    return Some(AstTermAux::TimesFactor(Box::new(fact)));
+                }
+                self.current_pos=original_position;
+                return None;
+            }
+            TokenKind::Division=>{
+                self.current_pos+=1;
+                if let Some(fact)=self.parse_factor(){
+                    if let Some(aux)=self.parse_term_aux(){
+                        return Some(AstTermAux::DivideFactorAux(Box::new(fact), Box::new(aux)));
+                    }
+                    return Some(AstTermAux::DivideFactor(Box::new(fact)));
+                }
+                self.current_pos=original_position;
+                return None;
+            }
+            _ => return None,
+        }
+    }
+
+    fn parse_factor(&mut self)->Option<AstFactor>{
+        let original_position=self.current_pos;
+        if self.parser_finished() || self.tokens[self.current_pos].is_identifier(){
+            return None;
+        }
+        if let Some(op)=self.parse_unaryop(){
+            if let Some(fact)=self.parse_factor(){
+                return Some(AstFactor::UnaryOpFactor(op, Box::new(fact)));
+            }
+        }
+        match self.tokens[self.current_pos].get_kind(){
+            TokenKind::OpenParenthesis =>{
+                self.current_pos+=1;
+                if let Some(exp)=self.parse_expression(){
+                    if self.tokens[self.current_pos].get_kind()==TokenKind::CloseParenthesis{
+                        self.current_pos+=1;
+                        return Some(AstFactor::Expression(Box::new(exp)));
+                    }
+                    else{
+                        self.current_pos=original_position;
+                        return None;
+                    }
+                }
+                else{
+                    self.current_pos=original_position;
+                    return None;
+                }
+            }
+            TokenKind::Number(x) => {self.current_pos+=1; return Some(AstFactor::Int(x));}
+            _ => return None,
         }
     }
 
@@ -115,9 +208,9 @@ impl Parser {
             return None;
         }
         match self.tokens[self.current_pos].get_kind(){
-            TokenKind::Minus => {self.current_pos+=1; return Some(AstUnaryOp::new(UnaryOpType::Minus))},
-            TokenKind::Complement => {self.current_pos+=1; return Some(AstUnaryOp::new(UnaryOpType::Complement))},
-            TokenKind::LogicNegation => {self.current_pos+=1; return Some(AstUnaryOp::new(UnaryOpType::LogicNegation))},
+            TokenKind::Minus => {self.current_pos+=1; return Some(AstUnaryOp::Minus)},
+            TokenKind::Complement => {self.current_pos+=1; return Some(AstUnaryOp::Complement)},
+            TokenKind::LogicNegation => {self.current_pos+=1; return Some(AstUnaryOp::LogicNegation)},
             _=> return None
         }
     }
@@ -171,6 +264,65 @@ mod tests {
     #[test]
     fn parser5(){
         let input="int blah(){return -!~~;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_none());
+    }
+    #[test]
+    fn parser6(){
+        let input="int blah(){return 1+2+5;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+    }
+
+    #[test]
+    fn parser7(){
+        let input="int blah(){return 1+-2+5;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+    }
+
+    #[test]
+    fn parser8(){
+        let input="int blah(){return (5-!3)/5;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+    }
+
+    #[test]
+    fn parser9(){
+        let input="int blah(){return 1*7;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+    }
+
+    #[test]
+    fn parser10(){
+        let input="int blah(){return 1+-2*(2/4+1)-~4;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+    }
+
+    #[test]
+    fn parser11(){
+        let input="int blah(){return 1+-2*(2/4++1)-~4;}";
         let lex=Lexer::new(&input);
         let mut pars=Parser::new(lex);
         let ast=pars.get_ast();

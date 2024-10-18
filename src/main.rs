@@ -18,7 +18,6 @@ fn main(){
     let mut args=env::args();
     args.next();
     let path= args.next().expect("No source file specified.");
-    println!("{}",&path);
     let mut file=File::open(&path).expect("Can't open file specified.");
     let mut s=String::new();
     file.read_to_string(&mut s).expect("Can't read from file specified.");
