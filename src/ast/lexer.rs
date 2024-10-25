@@ -19,11 +19,26 @@ pub enum TokenKind{
     Number(usize),
     Identifier(String),
     Minus,//
-    Complement,
-    LogicNegation,
+    Complement,//
+    LogicNegation,//
     Plus,//
-    Star,
-    Division,
+    Star,//
+    Division,//
+    LogicAnd,//
+    LogicOr,//
+    Eq,//
+    Neq,//
+    Lesser,//
+    Leq,//
+    Greater,//
+    Geq,//
+    Assignment,//
+    BitAnd,//
+    BitOr,//
+    BitXor,
+    BitShiftLeft,
+    BitShiftRight,
+    Modulo,
     Bad,
 }
 
@@ -80,12 +95,69 @@ impl<'a> Iterator for Lexer<'a>{
             ';' => {self.chars.next(); return Some(Token::new(TokenKind::Semicolon))},
             '-' => {self.chars.next(); return Some(Token::new(TokenKind::Minus))},
             '~' => {self.chars.next(); return Some(Token::new(TokenKind::Complement))},
-            '!' => {self.chars.next(); return Some(Token::new(TokenKind::LogicNegation))},
+            '!' => {
+                self.chars.next();
+                if !self.chars.peek().is_none() && self.chars.peek().unwrap()==&'='{
+                    self.chars.next();
+                    return Some(Token::new(TokenKind::Neq));
+                }
+                return Some(Token::new(TokenKind::LogicNegation));
+            }
             '+' => {self.chars.next(); return Some(Token::new(TokenKind::Plus))},
             '*' => {self.chars.next(); return Some(Token::new(TokenKind::Star))},
             '/' => {self.chars.next(); return Some(Token::new(TokenKind::Division))},
+            '&' => {
+                self.chars.next();
+                if !self.chars.peek().is_none() && self.chars.peek().unwrap()==&'&'{
+                    self.chars.next();
+                    return Some(Token::new(TokenKind::LogicAnd));
+                }
+                return Some(Token::new(TokenKind::BitAnd));
+            }
+            '|' => {
+                self.chars.next();
+                if !self.chars.peek().is_none() && self.chars.peek().unwrap()==&'|'{
+                    self.chars.next();
+                    return Some(Token::new(TokenKind::LogicOr));
+                }
+                return Some(Token::new(TokenKind::BitOr));
+            }
+            '=' => {
+                self.chars.next();
+                if !self.chars.peek().is_none() && self.chars.peek().unwrap()==&'='{
+                    self.chars.next();
+                    return Some(Token::new(TokenKind::Eq));
+                }
+                return Some(Token::new(TokenKind::Assignment));
+            }
+            '<' => {
+                self.chars.next();
+                if !self.chars.peek().is_none() && self.chars.peek().unwrap()==&'='{
+                    self.chars.next();
+                    return Some(Token::new(TokenKind::Leq));
+                }
+                if !self.chars.peek().is_none() && self.chars.peek().unwrap()==&'<'{
+                    self.chars.next();
+                    return Some(Token::new(TokenKind::BitShiftLeft));
+                }
+                return Some(Token::new(TokenKind::Lesser));
+            }
+            '>' => {
+                self.chars.next();
+                if !self.chars.peek().is_none() && self.chars.peek().unwrap()==&'='{
+                    self.chars.next();
+                    return Some(Token::new(TokenKind::Geq));
+                }
+                if !self.chars.peek().is_none() && self.chars.peek().unwrap()==&'>'{
+                    self.chars.next();
+                    return Some(Token::new(TokenKind::BitShiftRight));
+                }
+                return Some(Token::new(TokenKind::Greater));
+            }
+            '^' => {self.chars.next(); return Some(Token::new(TokenKind::BitXor))},
+            '%' => {self.chars.next(); return Some(Token::new(TokenKind::Modulo))},
             _ => {
-                let symbols=HashSet::from(['{','}','(',')', ';','-','~','!','+','*','/']);
+                let symbols=HashSet::from(['{','}','(',')', ';','-','~','!','+','*','/','&','|','=','<','>','^','%']);
                 let keywords:HashMap<_,_> = vec![("int".to_string(),Keyword::Int),("return".to_string(), Keyword::Return)].iter().cloned().collect();
                 if current_char.is_numeric(){
                     let mut bad= false;
@@ -192,6 +264,48 @@ mod tests {
         let lex=Lexer::new(&input);
         let v:Vec<Token>=lex.collect();
         assert_eq!(v,[Token::new(TokenKind::Number(1)),Token::new(TokenKind::Star),Token::new(TokenKind::Number(7))]);
+    }
+
+    #[test]
+    fn lexer6() {
+        let input="===<".to_string();
+        let lex=Lexer::new(&input);
+        let v:Vec<Token>=lex.collect();
+        assert_eq!(v,[Token::new(TokenKind::Eq),Token::new(TokenKind::Assignment),Token::new(TokenKind::Lesser)]);
+    }
+
+    #[test]
+    fn lexer7() {
+        let input="<==>".to_string();
+        let lex=Lexer::new(&input);
+        let v:Vec<Token>=lex.collect();
+        assert_eq!(v,[Token::new(TokenKind::Leq),Token::new(TokenKind::Assignment),Token::new(TokenKind::Greater)]);
+    }
+
+    #[test]
+    fn lexer8() {
+        let input="4^8".to_string();
+        let lex=Lexer::new(&input);
+        let v:Vec<Token>=lex.collect();
+        assert_eq!(v,[Token::new(TokenKind::Number(4)),Token::new(TokenKind::BitXor),Token::new(TokenKind::Number(8))]);
+    }
+
+    #[test]
+    fn lexer9() {
+        let input="hello!=!!5".to_string();
+        let lex=Lexer::new(&input);
+        let v:Vec<Token>=lex.collect();
+        assert_eq!(v,[Token::new(TokenKind::Identifier("hello".to_string())),Token::new(TokenKind::Neq),Token::new(TokenKind::LogicNegation), 
+            Token::new(TokenKind::LogicNegation),Token::new(TokenKind::Number(5))]);
+    }
+
+    #[test]
+    fn lexer10() {
+        let input="14||&|&&&|||".to_string();
+        let lex=Lexer::new(&input);
+        let v:Vec<Token>=lex.collect();
+        assert_eq!(v,[Token::new(TokenKind::Number(14)), Token::new(TokenKind::LogicOr),Token::new(TokenKind::BitAnd), Token::new(TokenKind::BitOr),
+            Token::new(TokenKind::LogicAnd), Token::new(TokenKind::BitAnd), Token::new(TokenKind::LogicOr),Token::new(TokenKind::BitOr)]);
     }
 
 

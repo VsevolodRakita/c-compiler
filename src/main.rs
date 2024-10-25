@@ -23,13 +23,22 @@ fn main(){
     file.read_to_string(&mut s).expect("Can't read from file specified.");
     let mut parser = Parser::new(Lexer::new(&s));
     
-    if let Some(asm)=parser.get_ast(){
-        let generator=Generator::new();
-        let s=generator.generate_assembly(asm);
-        let mut path2=path.split(".");
-        let path2=path2.next().unwrap().to_string()+&".s".to_string();
+    if let Some(ast)=parser.get_ast(){
+        let mut generator=Generator::new();
+        let asm=generator.generate_assembly(ast);
+        let path2=match args.next() {
+            Some(s) => s,
+            None => {
+                let mut temp=path.clone();
+                temp.pop();
+                temp.pop();
+                temp
+            }
+        };
+        //let mut path2=path.clone();
+        let path2=path2+&".s".to_string();
         let mut file=File::create(&path2).expect("Couldn't create file.");
-        file.write_all(s.as_bytes()).expect("Couldn't write to file");
+        file.write_all(asm.as_bytes()).expect("Couldn't write to file");
     }
     else{
         println!("Compilation Failed!")

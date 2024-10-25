@@ -9,6 +9,57 @@ pub struct Parser{
     current_pos: usize,
 }
 
+/// Macro for parsing recursive rules similar to
+/// <term> ::= <factor> || <factor> <term-aux>
+/// <term-aux> ::=   ("*" | "/"| "%") <factor> || ("*" | "/"| "%") <factor> <term-aux>
+/// 
+/// # Arguments
+/// - `$method_name` - the name of the method to be created (in the rule above: `parse_term`).
+/// - `$aux_method_name` - the name of the auxiliary method to be created (in the rule above: `parse_term_aux`).
+/// - `$return_type` - the type of ast node to be returned (in the rule above: `AstTerm`).
+/// - `$aux_return_type` - the type of auxiliary ast node to be returned (in the rule above: `AstTermAux`).
+/// - `$variant1` - the name of the first derivation of the first rule (in the rules above: `Factor`)
+/// - `$variant2` - the name of the second derivation of the first rule (in the rules above: `FactorAux`)
+/// - `$child_method` - the method used to parse the inner node (in the rule above: `parse_factor`).
+/// - `$connecting_token` - the connecting token in this derivation (in the rules above: `TokenKind::Star`, `TokenKind::Divide`, `TokenKind::Mod`)
+/// - `$variant_no_rec` - the name of the first derivation of the second rule (in the rules above: `StarFactor`, `DivideFactor`, and `ModFactor)
+/// - `$variant_rec` - the name of the second derivation of the second rule (in the rules above: `StarFactorAux`, `DivideFactorAux`, and `ModFactorAux`)
+macro_rules! parse_recursive {
+    ($method_name: ident, $aux_method_name: ident, $return_type: ty, $aux_return_type: ty, $variant1: expr, $variant2: expr, $child_method: ident, 
+        $($variant_no_rec: expr, $variant_rec: expr, $connecting_token: expr),*) => {
+        fn $method_name(&mut self)->Option<$return_type>{
+            if let Some(x)=self.$child_method(){
+                if let Some(aux)=self.$aux_method_name(){
+                    return Some($variant2(Box::new(x),Box::new(aux)));
+                }
+                return Some($variant1(Box::new(x)));
+            }
+            None
+        }
+
+        fn $aux_method_name(&mut self)->Option<$aux_return_type>{
+            let original_position=self.current_pos;
+            if self.parser_finished() || self.tokens[self.current_pos].is_identifier(){
+                return None;
+            }
+            $(
+                if self.tokens[self.current_pos].get_kind()==$connecting_token{
+                        self.current_pos+=1;
+                        if let Some(x)=self.$child_method(){
+                            if let Some(aux)=self.$aux_method_name(){
+                                return  Some($variant_rec(Box::new(x),Box::new(aux)));
+                            }
+                            return Some($variant_no_rec(Box::new(x)));
+                        }
+                        self.current_pos=original_position;
+                        return None;
+                }
+            )*
+            None
+        }
+    }
+}
+
 impl Parser {
     pub fn new(lex: Lexer)->Self{
         Self{
@@ -84,91 +135,44 @@ impl Parser {
         }
     }
 
-    fn parse_expression(&mut self)->Option<AstExpression>{
-        if let Some(term) = self.parse_term() {
-            if let Some(aux) = self.parse_expression_aux(){
-                return Some(AstExpression::TermExpAux(Box::new(term), Box::new(aux)));
-            }
-            return Some(AstExpression::Term(Box::new(term)));
-        }
-        None
-    }
+    parse_recursive!(parse_expression, parse_expression_aux, AstExpression, AstExpressionAux, AstExpression::LogicAndExp, AstExpression::LogicAndExpAux, parse_logical_and_exp,
+        AstExpressionAux::LogicOrLogicAndExp, AstExpressionAux::LogicOrLogicAndExpAux, TokenKind::LogicOr);
 
-    fn parse_expression_aux(&mut self)->Option<AstExpressionAux>{
-        let original_position=self.current_pos;
-        if self.parser_finished() || self.tokens[self.current_pos].is_identifier(){
-            return None;
-        }
-        match self.tokens[self.current_pos].get_kind(){
-            TokenKind::Plus =>{
-                self.current_pos+=1;
-                if let Some(term)=self.parse_term(){
-                    if let Some(aux)=self.parse_expression_aux(){
-                        return Some(AstExpressionAux::PlusTermAux(Box::new(term), Box::new(aux)));
-                    }
-                    return Some(AstExpressionAux::PlusTerm(Box::new(term)));
-                }
-                self.current_pos=original_position;
-                return None;
-            }
-            TokenKind::Minus=>{
-                self.current_pos+=1;
-                if let Some(term)=self.parse_term(){
-                    if let Some(aux)=self.parse_expression_aux(){
-                        return Some(AstExpressionAux::MinusTermAux(Box::new(term), Box::new(aux)));
-                    }
-                    return Some(AstExpressionAux::MinusTerm(Box::new(term)));
-                }
-                self.current_pos=original_position;
-                return None;
-            }
-            _ => return None,
-        }
-    }
+    parse_recursive!(parse_logical_and_exp, parse_logical_and_exp_aux, AstLogicAndExp, AstLogicAndExpAux, AstLogicAndExp::BitOrExp, AstLogicAndExp::BitOrExpAux, parse_bit_or_exp,
+        AstLogicAndExpAux::LogicAndBitOrExp, AstLogicAndExpAux::LogicAndBitOrExpAux, TokenKind::LogicAnd);
 
-    fn parse_term(&mut self)->Option<AstTerm>{
-        if let Some(fact)=self.parse_factor(){
-            if let Some(aux)=self.parse_term_aux(){
-                return Some(AstTerm::FactorAux(Box::new(fact), Box::new(aux)));
-            }
-            else{
-                return Some(AstTerm::Factor(Box::new(fact)));
-            }
-        }
-        None
-    }
+    parse_recursive!(parse_bit_or_exp, parse_bit_or_exp_aux, AstBitOrExp, AstBitOrExpAux, AstBitOrExp::BitXorExp, AstBitOrExp::BitXorExpAux, parse_bit_xor_exp,
+        AstBitOrExpAux::BitOrBitXorExp, AstBitOrExpAux::BitOrBitXorExpAux, TokenKind::BitOr);
 
-    fn parse_term_aux(&mut self)->Option<AstTermAux>{
-        let original_position=self.current_pos;
-        if self.parser_finished() || self.tokens[self.current_pos].is_identifier(){
-            return None;
-        }
-        match self.tokens[self.current_pos].get_kind(){
-            TokenKind::Star =>{
-                self.current_pos+=1;
-                if let Some(fact)=self.parse_factor(){
-                    if let Some(aux)=self.parse_term_aux(){
-                        return Some(AstTermAux::TimesFactorAux(Box::new(fact), Box::new(aux)));
-                    }
-                    return Some(AstTermAux::TimesFactor(Box::new(fact)));
-                }
-                self.current_pos=original_position;
-                return None;
-            }
-            TokenKind::Division=>{
-                self.current_pos+=1;
-                if let Some(fact)=self.parse_factor(){
-                    if let Some(aux)=self.parse_term_aux(){
-                        return Some(AstTermAux::DivideFactorAux(Box::new(fact), Box::new(aux)));
-                    }
-                    return Some(AstTermAux::DivideFactor(Box::new(fact)));
-                }
-                self.current_pos=original_position;
-                return None;
-            }
-            _ => return None,
-        }
-    }
+    parse_recursive!(parse_bit_xor_exp, parse_bit_xor_exp_aux, AstBitXorExp, AstBitXorExpAux, AstBitXorExp::BitAndExp, AstBitXorExp::BitAndExpAux, parse_bit_and_exp,
+        AstBitXorExpAux::BitXorBitAndExp, AstBitXorExpAux::BitXorBitAndExpAux, TokenKind::BitXor);
+
+    parse_recursive!(parse_bit_and_exp, parse_bit_and_exp_aux, AstBitAndExp, AstBitAndExpAux, AstBitAndExp::EqualityExp, AstBitAndExp::EqualityExpAux, parse_equality_exp,
+        AstBitAndExpAux::BitAndEqualityExp, AstBitAndExpAux::BitAndEqualityExpAux, TokenKind::BitAnd);
+
+    parse_recursive!(parse_equality_exp, parse_equality_exp_aux, AstEqualityExp, AstEqualityExpAux, 
+        AstEqualityExp::RelationalExp, AstEqualityExp::RelationalExpAux, parse_relational_exp,
+        AstEqualityExpAux::NeqRelationalExp, AstEqualityExpAux::NeqRelationalExpAux, TokenKind::Neq, 
+        AstEqualityExpAux::EqRelationalExp, AstEqualityExpAux::EqRelationalExpAux, TokenKind::Eq);
+
+    parse_recursive!(parse_relational_exp, parse_relational_exp_aux, AstRelationalExp, AstRelationalExpAux, 
+        AstRelationalExp::BitShiftExp, AstRelationalExp::BitShiftExpAux, parse_bit_shift_exp,
+        AstRelationalExpAux::LessBitShiftExp, AstRelationalExpAux::LessBitShiftExpAux, TokenKind::Lesser, 
+        AstRelationalExpAux::GreaterBitShiftExp, AstRelationalExpAux::GreaterBitShiftExpAux, TokenKind::Greater, 
+        AstRelationalExpAux::LeqBitShiftExp, AstRelationalExpAux::LeqBitShiftExpAux, TokenKind::Leq, 
+        AstRelationalExpAux::GeqBitShiftExp, AstRelationalExpAux::GeqBitShiftExpAux, TokenKind::Geq);
+
+    parse_recursive!(parse_bit_shift_exp, parse_bit_shift_exp_aux, AstBitShiftExp,AstBitShiftExpAux, AstBitShiftExp::AdditiveExp, AstBitShiftExp::AdditiveExpAux, parse_additive_exp,
+        AstBitShiftExpAux::BitShiftLeftAdditiveExp, AstBitShiftExpAux::BitShiftLeftAdditiveExpAux, TokenKind::BitShiftLeft, 
+        AstBitShiftExpAux::BitShiftRightAdditiveExp, AstBitShiftExpAux::BitShiftRighttAdditiveExpAux, TokenKind::BitShiftRight);
+
+    parse_recursive!(parse_additive_exp, parse_additive_exp_aux, AstAdditiveExp, AstAdditiveExpAux, AstAdditiveExp::Term, AstAdditiveExp::TermAux, parse_term, 
+        AstAdditiveExpAux::PlusTerm, AstAdditiveExpAux::PlusTermAux, TokenKind::Plus, AstAdditiveExpAux::MinusTerm, AstAdditiveExpAux::MinusTermAux, TokenKind::Minus);
+    
+
+    parse_recursive!(parse_term, parse_term_aux, AstTerm, AstTermAux, AstTerm::Factor, AstTerm::FactorAux, parse_factor, 
+        AstTermAux::StarFactor, AstTermAux::StarFactorAux, TokenKind::Star, AstTermAux::DivideFactor, AstTermAux::DivideFactorAux, TokenKind::Division, 
+        AstTermAux::ModFactor, AstTermAux::ModFactorAux, TokenKind::Modulo);
 
     fn parse_factor(&mut self)->Option<AstFactor>{
         let original_position=self.current_pos;
@@ -216,6 +220,10 @@ impl Parser {
     }
     
 }
+
+
+
+
 
 #[cfg(test)]
 mod tests {
@@ -328,5 +336,54 @@ mod tests {
         let ast=pars.get_ast();
         //println!("{:?}",&ast);
         assert!(ast.is_none());
+    }
+
+    #[test]
+    fn parser12(){
+        let input="int blah(){return 1!=2||3=2&&1==1>2+3+2*2*(4+2)*!4;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_none());
+    }
+
+    #[test]
+    fn parser13(){
+        let input="int blah(){return 1!=2||3==2&&1==1>2+3+2*2*(4+2)*!4;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+    }
+
+    #[test]
+    fn parser14(){
+        let input="int blah(){return 45%3&3|2^5;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+    }
+
+    #[test]
+    fn parser15(){
+        let input="int blah(){return 5^4%3^8^8^8&9;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+    }
+    #[test]
+    fn parser16(){
+        let input="int blah(){return 4<<3>>3>>3<<2>>1<1>3<6|3&5;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
     }
 }
