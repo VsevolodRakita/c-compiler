@@ -1,9 +1,11 @@
 /*
 <program> ::= <function>
-<function> ::= "int" <id> "(" ")" "{" <statement> "}"
-<statement> ::= "return" <expression> ";"
-<expression> ::= <logical-and-exp> || <logical-and-exp> <expression-aux> 
-<expression-aux> ::= "||" <logical-and-exp> ||  "||" <logical-and-exp><expression-aux>
+<function> ::= "int" <id> "(" ")" "{" <function-aux> "}"
+<function-aux> ::= <statement> || <statement> <function-aux>
+<statement> ::= "return" <expression> ";" || <expression> ";" || "int" <id>";" || "int" <id> "=" <expression>";"
+<expression> ::= <id> "=" <expression> || <logical-or-exp>
+<logical-or-exp> ::= <logical-and-exp> || <logical-and-exp> <logical-or-exp-aux>
+<logical-or-exp-aux> ::= "||" <logical-and-exp> ||  "||" <logical-and-exp><logical-or-exp-aux>
 <logical-and-exp> ::=<bit-or-exp>  || <bit-or-exp> <logical-and-exp-aux>
 <logical-and-exp-aux> ::= "&&"<bit-or-exp> || "&&"<bit-or-exp><logical-and-exp-aux>
 <bit-or-exp> ::= <bit-xor-exp> || <bit-xor-exp> <bit-or-exp-aux>
@@ -22,9 +24,11 @@
 <additive-exp-aux>::= ("+" | "-" ) <term> || ("+" | "-" ) <term> <additive-exp-aux>
 <term> ::= <factor> || <factor> <term-aux>
 <term-aux> ::=   ("*" | "/"| "%") <factor> || ("*" | "/"| "%") <factor> <term-aux>
-<factor> ::= "(" <expression> ")" | <unary_op> <factor> | <int>
+<factor> ::= "(" <expression> ")" | <unary_op> <factor> | <int> | <id>
 <unary_op> ::= "!" | "~" | "-"
 */
+
+use std::collections::HashMap;
 
 pub mod lexer;
 pub mod parser;
@@ -68,17 +72,23 @@ macro_rules! syntax_recursive {
 #[derive(Debug,PartialEq,Clone)]
 pub struct Ast{
     program: AstProgram,
+    variables: HashMap<String,bool>,
 }
 
 impl Ast {
-    pub fn new(program: AstProgram)->Self{
+    pub fn new(program: AstProgram, variables: HashMap<String,bool>)->Self{
         Self{
             program,
+            variables,
         }
     }
 
     pub fn get_program(&self)->&AstProgram{
         &self.program
+    }
+
+    pub fn get_variables(&self)->HashMap<String,bool>{
+        self.variables.clone()
     }
 }
 
@@ -102,51 +112,32 @@ impl AstProgram{
 }
 
 #[derive(Debug,PartialEq,Clone)]
-pub struct AstFunction{
-    id: String,
-    statement: AstStatement,
+pub enum AstFunction {
+    IdFunctionAux(String, Box<AstFunctionAux>),
 }
 
-
-//----------------------ASTFunction--------------------------------------------------
-impl AstFunction{
-    pub fn new(id: String, statement: AstStatement)->Self{
-        Self{
-            id,
-            statement,
-        }
-    }
-
-    pub fn get_id(&self)->String{
-        self.id.clone()
-    }
-
-    pub fn get_statement(&self)->&AstStatement{
-        &self.statement
-    }
+#[derive(Debug,PartialEq,Clone)]
+pub enum AstFunctionAux {
+    Statement(Box<AstStatement>),
+    StatementAux(Box<AstStatement>,Box<AstFunctionAux>),
 }
-
 
 //----------------------ASTStatement--------------------------------------------------
 #[derive(Debug,PartialEq,Clone)]
-pub struct AstStatement{
-    expression: AstExpression,
+pub enum AstStatement{
+    ReturnExpression(Box<AstExpression>),
+    Expression(Box<AstExpression>),
+    Id(String),
+    IdAssignment(String, Box<AstExpression>),
 }
 
-impl AstStatement {
-    pub fn new(expression: AstExpression)->Self{
-        Self { 
-            expression, 
-        }
-    }
-
-    pub fn get_expression(&self)->&AstExpression{
-        &self.expression
-    }
-
+#[derive(Debug,PartialEq,Clone)]
+pub enum AstExpression {
+    IdExpression(String, Box<AstExpression>),
+    LogicOrExp(Box<AstLogicOrExp>),
 }
 
-syntax_recursive!(AstExpression, AstExpressionAux, LogicAndExp, LogicAndExpAux, AstLogicAndExp,
+syntax_recursive!(AstLogicOrExp, AstLogicOrExpAux, LogicAndExp, LogicAndExpAux, AstLogicAndExp,
     LogicOrLogicAndExp, LogicOrLogicAndExpAux, TokenKind::LogicOr);
 
 syntax_recursive!(AstLogicAndExp, AstLogicAndExpAux, BitOrExp, BitOrExpAux, AstBitOrExp,
@@ -183,6 +174,7 @@ pub enum AstFactor{
     Expression(Box<AstExpression>),
     UnaryOpFactor(AstUnaryOp,Box<AstFactor>),
     Int(usize),
+    Id(String),
 }
 
 

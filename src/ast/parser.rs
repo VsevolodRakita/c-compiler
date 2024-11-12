@@ -1,5 +1,7 @@
 use lexer::{Keyword, Token, TokenKind};
 
+use std::collections::HashMap;
+
 use super::lexer::Lexer;
 use super::*;
 
@@ -7,6 +9,7 @@ use super::*;
 pub struct Parser{
     tokens: Vec<Token>,
     current_pos: usize,
+    variables: HashMap<String,bool>
 }
 
 /// Macro for parsing recursive rules similar to
@@ -65,12 +68,13 @@ impl Parser {
         Self{
             tokens: lex.collect(),
             current_pos: 0,
+            variables: HashMap::new(),
         }
     }
 
     pub fn get_ast(&mut self)->Option<Ast>{
         match self.parse_program() {
-            Some(program)=> return Some(Ast::new(program)),
+            Some(program)=> return Some(Ast::new(program, self.variables.clone())),
             None => return None,            
         }
     }
@@ -81,8 +85,8 @@ impl Parser {
 
     fn parse_program(&mut self)->Option<AstProgram>{
         match self.parse_function() {
-            Some(function)=> return Some(AstProgram::new(function)),
-            None => return None,
+            Some(function)=> Some(AstProgram::new(function)),
+            None => None,
         }
     }
 
@@ -93,14 +97,13 @@ impl Parser {
             self.tokens[self.current_pos+3].get_kind()!=TokenKind::CloseParenthesis || self.tokens[self.current_pos+4].get_kind()!=TokenKind::OpenBrace{
                 return None;
         }
+        let func_name=self.tokens[self.current_pos+1].get_identifier().unwrap();
         self.current_pos+=5;
-        match self.parse_statement() {
-            Some(statement)=> {
+        
+        match self.parse_function_aux() {
+            Some(function_aux)=> {
                 if !self.parser_finished() && !self.tokens[self.current_pos].is_identifier() && self.tokens[self.current_pos].get_kind()==TokenKind::CloseBrace{
-                    match self.tokens[original_index+1].get_kind(){
-                        TokenKind::Identifier(s) =>{self.current_pos+=1; return Some(AstFunction::new(s, statement));}
-                        _ => {assert!(false); return None},
-                    }
+                    return Some(AstFunction::IdFunctionAux(func_name, Box::new(function_aux)));
                 }
                 else{
                     self.current_pos=original_index;
@@ -111,32 +114,121 @@ impl Parser {
         }
     }
 
+    fn parse_function_aux(&mut self)->Option<AstFunctionAux>{
+        if let Some(ast_statement)=self.parse_statement(){
+
+            if let Some(ast_function_aux) =self.parse_function_aux(){
+                return Some(AstFunctionAux::StatementAux(Box::new(ast_statement), Box::new(ast_function_aux)));
+            }
+            return Some(AstFunctionAux::Statement(Box::new(ast_statement)));
+        }
+        None
+    }
+
     fn parse_statement(&mut self)->Option<AstStatement>{
         let original_index=self.current_pos;
-        if self.parser_finished() || self.tokens[self.current_pos].is_identifier(){
+        if self.parser_finished(){
+            return None;
+        }
+        if let Some(ast_expression)=self.parse_expression(){
+            if !self.parser_finished() && self.tokens[self.current_pos].get_kind()==TokenKind::Semicolon{
+                self.current_pos+=1;
+                return Some(AstStatement::Expression(Box::new(ast_expression)));
+            }
+            self.current_pos=original_index;
             return None;
         }
         match self.tokens[self.current_pos].get_kind(){
-            TokenKind::Keyword(Keyword::Return) => self.current_pos+=1,
-            _ => return None
-        }
-        match self.parse_expression() {
-            Some(ast_exp)=>{
-                if self.parser_finished() || self.tokens[self.current_pos].is_identifier(){
-                    self.current_pos=original_index;
-                    return None;
+            TokenKind::Keyword(Keyword::Return) => {
+                self.current_pos+=1;
+                if let Some(ast_expression)=self.parse_expression(){
+                    if !self.parser_finished() && self.tokens[self.current_pos].get_kind()==TokenKind::Semicolon{
+                        self.current_pos+=1;
+                        return Some(AstStatement::ReturnExpression(Box::new(ast_expression)));
+                    }
                 }
-                match self.tokens[self.current_pos].get_kind() {
-                    TokenKind::Semicolon => {self.current_pos+=1; return Some(AstStatement::new(ast_exp));}
-                    _ => {self.current_pos=original_index; return None;}
+                self.current_pos=original_index;
+                return None;
+            },
+            TokenKind::Keyword(Keyword::Int) => {
+                self.current_pos+=1;
+                if !self.parser_finished() && self.tokens[self.current_pos].is_identifier(){
+                    let s = self.tokens[self.current_pos].get_identifier().unwrap();
+                    self.current_pos+=1;
+                    if self.parser_finished(){
+                        self.current_pos=original_index;
+                        return None;
+                    }
+                    match self.tokens[self.current_pos].get_kind(){
+                        TokenKind::Semicolon => {
+                            self.current_pos+=1;
+                            if self.variables.contains_key(&s){
+                                println!("{}", "Compilation Failed! Double decleration of variable ".to_string()+&s);
+                                return None;
+                            }
+                            self.variables.insert(s.clone(), false);
+                            return Some(AstStatement::Id(s));
+                        }
+                        TokenKind::Assignment =>{
+                            self.current_pos+=1;
+                            if let Some(ast_exp)=self.parse_expression(){
+                                if !self.parser_finished() && self.tokens[self.current_pos].get_kind()==TokenKind::Semicolon{
+                                    self.current_pos+=1;
+                                    if self.variables.contains_key(&s){
+                                        println!("{}", "Compilation Failed! Double decleration of variable ".to_string()+&s);
+                                        return None;
+                                    }
+                                    self.variables.insert(s.clone(), true);
+                                    return Some(AstStatement::IdAssignment(s, Box::new(ast_exp)));
+                                }
+                            }
+                            
+                        }
+                        _=> {self.current_pos=original_index; return None;}
+                    }
                 }
+                self.current_pos=original_index;
+                return None;
             }
-            None => {self.current_pos-=1; return None}
+            _ => return None
         }
     }
 
-    parse_recursive!(parse_expression, parse_expression_aux, AstExpression, AstExpressionAux, AstExpression::LogicAndExp, AstExpression::LogicAndExpAux, parse_logical_and_exp,
-        AstExpressionAux::LogicOrLogicAndExp, AstExpressionAux::LogicOrLogicAndExpAux, TokenKind::LogicOr);
+    fn parse_expression(&mut self)->Option<AstExpression>{
+        let original_position=self.current_pos;
+        if self.parser_finished(){
+            return None;
+        }
+        if let TokenKind::Identifier(s)= self.tokens[self.current_pos].get_kind() {
+            self.current_pos+=1;
+            if self.parser_finished(){
+                self.current_pos=original_position;
+                return None;
+            }
+            if self.tokens[self.current_pos].get_kind()==TokenKind::Assignment{
+                self.current_pos+=1;
+                if self.parser_finished(){
+                    self.current_pos=original_position;
+                    return None;
+                }
+                if let Some(exp) = self.parse_expression(){
+                    if self.variables.insert(s.clone(), true).is_none(){
+                        println!("{}", "Assignment to variable ".to_string() +&s+" before decleration.");
+                        return None;
+                    }
+                    return Some(AstExpression::IdExpression(s, Box::new(exp)));
+                }
+            }
+            self.current_pos=original_position;
+        }
+        match  self.parse_logical_or_exp(){
+            Some(ast_logical_or_exp) => Some(AstExpression::LogicOrExp(Box::new(ast_logical_or_exp))),
+            None => None,
+        }
+    }
+
+    parse_recursive!(parse_logical_or_exp, parse_logical_or_exp_aux, AstLogicOrExp, AstLogicOrExpAux, AstLogicOrExp::LogicAndExp, AstLogicOrExp::LogicAndExpAux, parse_logical_and_exp,
+        AstLogicOrExpAux::LogicOrLogicAndExp, AstLogicOrExpAux::LogicOrLogicAndExpAux, TokenKind::LogicOr);
 
     parse_recursive!(parse_logical_and_exp, parse_logical_and_exp_aux, AstLogicAndExp, AstLogicAndExpAux, AstLogicAndExp::BitOrExp, AstLogicAndExp::BitOrExpAux, parse_bit_or_exp,
         AstLogicAndExpAux::LogicAndBitOrExp, AstLogicAndExpAux::LogicAndBitOrExpAux, TokenKind::LogicAnd);
@@ -176,7 +268,7 @@ impl Parser {
 
     fn parse_factor(&mut self)->Option<AstFactor>{
         let original_position=self.current_pos;
-        if self.parser_finished() || self.tokens[self.current_pos].is_identifier(){
+        if self.parser_finished(){
             return None;
         }
         if let Some(op)=self.parse_unaryop(){
@@ -203,6 +295,23 @@ impl Parser {
                 }
             }
             TokenKind::Number(x) => {self.current_pos+=1; return Some(AstFactor::Int(x));}
+            TokenKind::Identifier(s) => {
+                match self.variables.insert(s.clone(), true) {
+                    Some(b) => {
+                        if b{
+                            self.current_pos+=1;
+                            return Some(AstFactor::Id(s));
+                        }
+                        println!("{}", "Access to uninitialized variable ".to_string() +&s);
+                        return None;
+                    }
+                    None => {
+                        println!("{}", "Access to undeclared variable ".to_string() +&s);
+                        return None;
+                    }
+                }
+                 
+            }
             _ => return None,
         }
     }
@@ -385,5 +494,95 @@ mod tests {
         let ast=pars.get_ast();
         //println!("{:?}",&ast);
         assert!(ast.is_some());
+    }
+    #[test]
+    fn parser17(){
+        let input="int main(){int a; return 1+2;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+        let mut ht=HashMap::new();
+        ht.insert("a".to_string(), false);
+        //ht.insert("b".to_string(), true);
+        assert_eq!(ht, ast.unwrap().get_variables());
+    }
+
+    #[test]
+    fn parser18(){
+        let input="int main(){int b=3; return 1+2;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+        let mut ht=HashMap::new();
+        ht.insert("b".to_string(), true);
+        assert_eq!(ht, ast.unwrap().get_variables());
+    }
+
+    #[test]
+    fn parser19(){
+        let input="int main(){int b=3; return b+2;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+        let mut ht=HashMap::new();
+        ht.insert("b".to_string(), true);
+        assert_eq!(ht, ast.unwrap().get_variables());
+    }
+    #[test]
+    fn parser20(){
+        let input="int main(){int b=3;int a; return b+2;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+        let mut ht=HashMap::new();
+        ht.insert("b".to_string(), true);
+        ht.insert("a".to_string(), false);
+        assert_eq!(ht, ast.unwrap().get_variables());
+    }
+
+    #[test]
+    fn parser21(){
+        let input="int main(){int b=3;int a; return a+2;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_none());
+    }
+
+    #[test]
+    fn parser22(){
+        let input="int main(){int b;int a=5;b=9; return b+a;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+        let mut ht=HashMap::new();
+        ht.insert("b".to_string(), true);
+        ht.insert("a".to_string(), true);
+        assert_eq!(ht, ast.unwrap().get_variables());
+    }
+
+    #[test]
+    fn parser23(){
+        let input="int main(){int b;int a=5;b=9; b+a;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+        let mut ht=HashMap::new();
+        ht.insert("b".to_string(), true);
+        ht.insert("a".to_string(), true);
+        assert_eq!(ht, ast.unwrap().get_variables());
     }
 }

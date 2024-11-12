@@ -59,6 +59,13 @@ impl Token{
         std::mem::discriminant(&self.kind)==std::mem::discriminant(&TokenKind::Identifier("".to_string()))
     }
 
+    pub fn get_identifier(&self)->Option<String>{
+        match &self.kind {
+            TokenKind::Identifier(s) => Some(s.clone()),
+            _ => None,
+        }
+    }
+
     pub fn get_kind(&self)->TokenKind{
         self.kind.clone()
     }

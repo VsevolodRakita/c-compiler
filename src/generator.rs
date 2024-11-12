@@ -1,16 +1,32 @@
+use std::collections::HashMap;
+
 use crate::ast::*;
 
+const WORDSIZE:usize = 8;
 
 pub struct Generator{
     label_counter: usize,
+    variables: HashMap<String, usize>,
+    end_label: String,
 }
 
 impl Generator{
     pub fn new()->Self{
-        Self {label_counter:0,}
+        Self {label_counter:1, 
+            variables: HashMap::new(),
+            end_label: "_label0".to_string(),
+        }
     }
 
     pub fn generate_assembly(&mut self, ast: Ast)->String{
+        let mut ctr=1;
+        for (key,val) in ast.get_variables().iter(){
+            if *val{
+                self.variables.insert(key.clone(), ctr);
+                ctr+=1;
+            }
+            
+        }
         self.generate_program(ast.get_program())
     }
 
@@ -19,24 +35,56 @@ impl Generator{
     }
 
     fn generate_function(&mut self, function: &AstFunction)->String{
-        "\t.global ".to_string()+&function.get_id()+"\n"+&function.get_id()+":\n"+&self.generate_statement(function.get_statement())
-    }
-
-    fn generate_statement(&mut self, statement: &AstStatement)->String{
-        self.generate_expression(statement.get_expression())+"\tret\n"
-    }
-
-    fn generate_expression(&mut self, expression: &AstExpression)->String{
-        match expression {
-            AstExpression::LogicAndExp(ast_logic_and_exp) => self.generate_logical_and_expression(ast_logic_and_exp),
-            AstExpression::LogicAndExpAux(ast_logic_and_exp, ast_expression_aux) => 
-            self.generate_logical_and_expression(ast_logic_and_exp)+&self.generate_expression_aux(ast_expression_aux),
+        match function {
+            AstFunction::IdFunctionAux(name, ast_function_aux) => {
+                let prologue = "\t.global ".to_string()+name+"\n"+name+":\n\tpush\t%rbp\n\tmov\t%rsp, %rbp\n";
+                let variable_allocation = "\tadd\t$-".to_string()+&(self.variables.len()*WORDSIZE).to_string()+", %rsp\n";
+                let default_return_value = "\tmov\t$0, %rax\n".to_string()+&self.end_label+&":\n".to_string();
+                let varable_deallocation = "\tadd\t$".to_string()+&(self.variables.len()*WORDSIZE).to_string()+", %rsp\n";
+                let epilogue = "\tpop\t%rbp\n\tret\n".to_string();
+                prologue+&variable_allocation+&self.generate_function_aux(ast_function_aux)+&default_return_value+&varable_deallocation+&epilogue
+            },
         }
     }
 
-    fn generate_expression_aux(&mut self, ast_expression_aux: &AstExpressionAux)->String{
-        match ast_expression_aux {
-            AstExpressionAux::LogicOrLogicAndExp(ast_logic_and_exp) => {
+    fn generate_function_aux(&mut self, ast_function_aux: &AstFunctionAux)->String{
+        match ast_function_aux {
+            AstFunctionAux::Statement(ast_statement) => self.generate_statement(ast_statement),
+            AstFunctionAux::StatementAux(ast_statement, ast_function_aux) => 
+                self.generate_statement(ast_statement)+&self.generate_function_aux(ast_function_aux),
+        }
+    }
+
+    fn generate_statement(&mut self, ast_statement: &AstStatement)->String{
+        match ast_statement {
+            AstStatement::ReturnExpression(ast_expression) => 
+                self.generate_expression(ast_expression)+&"\tjmp\t".to_string()+&self.end_label+&"\n".to_string(),
+            AstStatement::Expression(ast_expression) => self.generate_expression(ast_expression),
+            AstStatement::Id(_) => "".to_string(),
+            AstStatement::IdAssignment(s, ast_expression) => self.generate_expression(ast_expression)+&"\tmov\t%rax, -".to_string()+
+                &(self.variables[s]*WORDSIZE).to_string()+&"(%rbp)\n",
+        }
+    }
+
+    fn generate_expression(&mut self, ast_expression: &AstExpression)->String{
+        match ast_expression {
+            AstExpression::IdExpression(s, ast_expression) => self.generate_expression(ast_expression)+&"\tmov\t%rax, -".to_string()+
+                &(self.variables[s]*WORDSIZE).to_string()+&"(%rbp)\n",
+            AstExpression::LogicOrExp(ast_logic_or_exp) => self.generate_logical_or_expression(ast_logic_or_exp),
+        }
+    }
+
+    fn generate_logical_or_expression(&mut self, ast_logic_or_exp: &AstLogicOrExp)->String{
+        match ast_logic_or_exp {
+            AstLogicOrExp::LogicAndExp(ast_logic_and_exp) => self.generate_logical_and_expression(ast_logic_and_exp),
+            AstLogicOrExp::LogicAndExpAux(ast_logic_and_exp, ast_logic_or_exp_aux) => 
+            self.generate_logical_and_expression(ast_logic_and_exp)+&self.generate_logical_or_expression_aux(ast_logic_or_exp_aux),
+        }
+    }
+
+    fn generate_logical_or_expression_aux(&mut self, ast_logic_or_exp_aux: &AstLogicOrExpAux)->String{
+        match ast_logic_or_exp_aux {
+            AstLogicOrExpAux::LogicOrLogicAndExp(ast_logic_and_exp) => {
                 let label="_label".to_string()+&self.label_counter.to_string();
                 let end="_end".to_string()+&self.label_counter.to_string();
                 self.label_counter+=1;
@@ -44,13 +92,13 @@ impl Generator{
                 &label+&":\n".to_string()+&self.generate_logical_and_expression(ast_logic_and_exp)+&"\tcmp\t$0, %rax\n\tmov\t$0, %rax\n\tsetne\t%al\n"+
                 &end+&":\n".to_string();
             },
-            AstExpressionAux::LogicOrLogicAndExpAux(ast_logic_and_exp, ast_expression_aux) => {
+            AstLogicOrExpAux::LogicOrLogicAndExpAux(ast_logic_and_exp, ast_expression_aux) => {
                 let label="_label".to_string()+&self.label_counter.to_string();
                 let end="_end".to_string()+&self.label_counter.to_string();
                 self.label_counter+=1;
                 return "\tcmp\t$0, %rax\n\tje\t".to_string()+&label+&"\n\tmov\t$1, %rax\n\tjmp\t".to_string()+&end+&"\n"+
                 &label+&":\n".to_string()+&self.generate_logical_and_expression(ast_logic_and_exp)+&"\tcmp\t$0, %rax\n\tmov\t$0, %rax\n\tsetne\t%al\n"+
-                &end+&":\n".to_string()+&self.generate_expression_aux(ast_expression_aux);
+                &end+&":\n".to_string()+&self.generate_logical_or_expression_aux(ast_expression_aux);
             },
         }
     }
@@ -278,20 +326,25 @@ impl Generator{
 
     fn generate_factor(&mut self, factor: &AstFactor)->String{
         match factor {
-            AstFactor::Expression(expression) => return self.generate_expression(expression),
-            AstFactor::UnaryOpFactor(op, factor2) => return self.generate_factor(&factor2) +  &self.generate_unary_op(op),
-            AstFactor::Int(x) => return "\tmov\t$".to_string()+&x.to_string()+&", %rax\n".to_string(),
+            AstFactor::Expression(expression) => self.generate_expression(expression),
+            AstFactor::UnaryOpFactor(op, factor2) => self.generate_factor(&factor2) +  &self.generate_unary_op(op),
+            AstFactor::Int(x) => "\tmov\t$".to_string()+&x.to_string()+&", %rax\n".to_string(),
+            AstFactor::Id(s) => {
+                let stack_index = self.variables.get(s).unwrap()*WORDSIZE;
+                "\tmov\t-".to_string()+&stack_index.to_string()+&"(%rbp), %rax\n".to_string()
+            }
         }
     }
 
 
     fn generate_unary_op(&self, op: &AstUnaryOp)->String{
         match op {
-            &crate::ast::AstUnaryOp::Minus => return "\tneg\t%rax\n".to_string(),
-            &crate::ast::AstUnaryOp::Complement => return "\tnot\t%rax\n".to_string(),
-            &crate::ast::AstUnaryOp::LogicNegation => return "\tcmp\t$0, %rax\nmov\t$0, %rax\n\tsete\t%al\n".to_string(),
+            &crate::ast::AstUnaryOp::Minus => "\tneg\t%rax\n".to_string(),
+            &crate::ast::AstUnaryOp::Complement => "\tnot\t%rax\n".to_string(),
+            &crate::ast::AstUnaryOp::LogicNegation => "\tcmp\t$0, %rax\nmov\t$0, %rax\n\tsete\t%al\n".to_string(),
         }
     }
+
 }
 
 #[cfg(test)]
