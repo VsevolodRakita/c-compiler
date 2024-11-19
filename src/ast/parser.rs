@@ -99,7 +99,6 @@ impl Parser {
         }
         let func_name=self.tokens[self.current_pos+1].get_identifier().unwrap();
         self.current_pos+=5;
-        
         match self.parse_function_aux() {
             Some(function_aux)=> {
                 if !self.parser_finished() && !self.tokens[self.current_pos].is_identifier() && self.tokens[self.current_pos].get_kind()==TokenKind::CloseBrace{
@@ -115,12 +114,69 @@ impl Parser {
     }
 
     fn parse_function_aux(&mut self)->Option<AstFunctionAux>{
-        if let Some(ast_statement)=self.parse_statement(){
-
+        if let Some(ast_block_item)=self.parse_block_item(){
             if let Some(ast_function_aux) =self.parse_function_aux(){
-                return Some(AstFunctionAux::StatementAux(Box::new(ast_statement), Box::new(ast_function_aux)));
+                return Some(AstFunctionAux::BlockItemAux(Box::new(ast_block_item), Box::new(ast_function_aux)));
             }
-            return Some(AstFunctionAux::Statement(Box::new(ast_statement)));
+            return Some(AstFunctionAux::BlockItem(Box::new(ast_block_item)));
+        }
+        None
+    }
+
+    fn parse_block_item(&mut self)->Option<AstBlockItem>{
+        if let Some(ast_decleration) = self.parse_decleration(){
+            return Some(AstBlockItem::Declaration(Box::new(ast_decleration)));
+        }
+        if let Some(ast_statement) = self.parse_statement(){
+            return Some(AstBlockItem::Statement(Box::new(ast_statement)));
+        }
+        None
+    }
+
+    fn parse_decleration(&mut self)->Option<AstDeclaration>{
+        let original_index=self.current_pos;
+        if self.parser_finished() || self.tokens[self.current_pos].is_identifier(){
+            return None;
+        }
+        if TokenKind::Keyword(Keyword::Int)  ==  self.tokens[self.current_pos].get_kind(){
+            self.current_pos+=1;
+            if !self.parser_finished() && self.tokens[self.current_pos].is_identifier(){
+                let s = self.tokens[self.current_pos].get_identifier().unwrap();
+                self.current_pos+=1;
+                if self.parser_finished(){
+                    self.current_pos=original_index;
+                    return None;
+                }
+                match self.tokens[self.current_pos].get_kind(){
+                    TokenKind::Semicolon => {
+                        self.current_pos+=1;
+                        if self.variables.contains_key(&s){
+                            println!("{}", "Compilation Failed! Double decleration of variable ".to_string()+&s);
+                            return None;
+                        }
+                        self.variables.insert(s.clone(), false);
+                        return Some(AstDeclaration::Id(s));
+                    }
+                    TokenKind::Assignment =>{
+                        self.current_pos+=1;
+                        if let Some(ast_exp)=self.parse_expression(){
+                            if !self.parser_finished() && self.tokens[self.current_pos].get_kind()==TokenKind::Semicolon{
+                                self.current_pos+=1;
+                                if self.variables.contains_key(&s){
+                                    println!("{}", "Compilation Failed! Double decleration of variable ".to_string()+&s);
+                                    return None;
+                                }
+                                self.variables.insert(s.clone(), true);
+                                return Some(AstDeclaration::IdAssignment(s, Box::new(ast_exp)));
+                            }
+                        }
+                            
+                    }
+                    _=> {self.current_pos=original_index; return None;}
+                }
+            }
+            self.current_pos=original_index;
+            return None;
         }
         None
     }
@@ -142,7 +198,7 @@ impl Parser {
             TokenKind::Keyword(Keyword::Return) => {
                 self.current_pos+=1;
                 if let Some(ast_expression)=self.parse_expression(){
-                    if !self.parser_finished() && self.tokens[self.current_pos].get_kind()==TokenKind::Semicolon{
+                    if !self.parser_finished() && !self.tokens[self.current_pos].is_identifier() && self.tokens[self.current_pos].get_kind()==TokenKind::Semicolon{
                         self.current_pos+=1;
                         return Some(AstStatement::ReturnExpression(Box::new(ast_expression)));
                     }
@@ -150,46 +206,31 @@ impl Parser {
                 self.current_pos=original_index;
                 return None;
             },
-            TokenKind::Keyword(Keyword::Int) => {
+            TokenKind::Keyword(Keyword::If) =>{
                 self.current_pos+=1;
-                if !self.parser_finished() && self.tokens[self.current_pos].is_identifier(){
-                    let s = self.tokens[self.current_pos].get_identifier().unwrap();
+                if !self.parser_finished() && !self.tokens[self.current_pos].is_identifier() && self.tokens[self.current_pos].get_kind()==TokenKind::OpenParenthesis{
                     self.current_pos+=1;
-                    if self.parser_finished(){
-                        self.current_pos=original_index;
-                        return None;
-                    }
-                    match self.tokens[self.current_pos].get_kind(){
-                        TokenKind::Semicolon => {
+                    if let Some(ast_expression) = self.parse_expression(){
+                        if !self.parser_finished() && !self.tokens[self.current_pos].is_identifier() && self.tokens[self.current_pos].get_kind()==TokenKind::CloseParenthesis{
                             self.current_pos+=1;
-                            if self.variables.contains_key(&s){
-                                println!("{}", "Compilation Failed! Double decleration of variable ".to_string()+&s);
-                                return None;
-                            }
-                            self.variables.insert(s.clone(), false);
-                            return Some(AstStatement::Id(s));
-                        }
-                        TokenKind::Assignment =>{
-                            self.current_pos+=1;
-                            if let Some(ast_exp)=self.parse_expression(){
-                                if !self.parser_finished() && self.tokens[self.current_pos].get_kind()==TokenKind::Semicolon{
+                            if let Some(ast_statement) = self.parse_statement() {
+                                let new_pos=self.current_pos;
+                                if !self.parser_finished() && !self.tokens[self.current_pos].is_identifier() && 
+                                        self.tokens[self.current_pos].get_kind()==TokenKind::Keyword(Keyword::Else){
                                     self.current_pos+=1;
-                                    if self.variables.contains_key(&s){
-                                        println!("{}", "Compilation Failed! Double decleration of variable ".to_string()+&s);
-                                        return None;
+                                    if let Some(ast_statement2) = self.parse_statement(){
+                                        return Some(AstStatement::IfExpressionStatementElseStatement(Box::new(ast_expression), Box::new(ast_statement), Box::new(ast_statement2)));
                                     }
-                                    self.variables.insert(s.clone(), true);
-                                    return Some(AstStatement::IdAssignment(s, Box::new(ast_exp)));
                                 }
+                                self.current_pos=new_pos;
+                                return Some(AstStatement::IfExpressionStatement(Box::new(ast_expression), Box::new(ast_statement)));
                             }
-                            
                         }
-                        _=> {self.current_pos=original_index; return None;}
                     }
                 }
                 self.current_pos=original_index;
                 return None;
-            }
+            },
             _ => return None
         }
     }
@@ -221,10 +262,35 @@ impl Parser {
             }
             self.current_pos=original_position;
         }
-        match  self.parse_logical_or_exp(){
-            Some(ast_logical_or_exp) => Some(AstExpression::LogicOrExp(Box::new(ast_logical_or_exp))),
+        match  self.parse_conditional_exp(){
+            Some(ast_conditional_exp) => Some(AstExpression::ConditionalExp(Box::new(ast_conditional_exp))),
             None => None,
         }
+    }
+
+    fn parse_conditional_exp(&mut self)->Option<AstConditionalExp>{
+        if self.parser_finished(){
+            return None;
+        }
+        if let Some(ast_logic_or_exp) = self.parse_logical_or_exp(){
+            if !self.parser_finished() && !self.tokens[self.current_pos].is_identifier() && 
+                    self.tokens[self.current_pos].get_kind() == TokenKind::QuestionMark{
+                let new_pos=self.current_pos;
+                self.current_pos+=1;
+                if let Some(ast_expression) = self.parse_expression(){
+                    if self.tokens[self.current_pos].get_kind() == TokenKind::Colon{
+                        self.current_pos+=1;
+                        if let Some(ast_conditional_exp) = self.parse_conditional_exp(){
+                            return Some(AstConditionalExp::LogicOrExpExpConditionalExp(Box::new(ast_logic_or_exp), Box::new(ast_expression), 
+                                Box::new(ast_conditional_exp)));
+                        }
+                    }
+                }
+                self.current_pos=new_pos;
+            }
+            return Some(AstConditionalExp::LogicOrExp(Box::new(ast_logic_or_exp)));
+        }
+        None
     }
 
     parse_recursive!(parse_logical_or_exp, parse_logical_or_exp_aux, AstLogicOrExp, AstLogicOrExpAux, AstLogicOrExp::LogicAndExp, AstLogicOrExp::LogicAndExpAux, parse_logical_and_exp,

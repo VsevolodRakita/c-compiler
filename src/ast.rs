@@ -1,9 +1,13 @@
 /*
 <program> ::= <function>
 <function> ::= "int" <id> "(" ")" "{" <function-aux> "}"
-<function-aux> ::= <statement> || <statement> <function-aux>
-<statement> ::= "return" <expression> ";" || <expression> ";" || "int" <id>";" || "int" <id> "=" <expression>";"
-<expression> ::= <id> "=" <expression> || <logical-or-exp>
+<function-aux> ::= <block-item>|| <block-item> <function-aux> 
+<block-item> ::= <statement> || <declaration>
+<decleration> ::= "int" <id>";" || "int" <id> "=" <expression>";"
+<statement> ::= "return" <expression> ";" || <expression> ";" ||  "if" "(" <expression> ")" <statement> || 
+                "if" "(" <expression> ")" <statement> "else" <statement>
+<expression> ::= <id> "=" <expression> || <conditional-exp>
+<conditional-exp> ::= <logical-or-exp>  || <logical-or-exp> "?" <expression> ":" <conditional-exp>
 <logical-or-exp> ::= <logical-and-exp> || <logical-and-exp> <logical-or-exp-aux>
 <logical-or-exp-aux> ::= "||" <logical-and-exp> ||  "||" <logical-and-exp><logical-or-exp-aux>
 <logical-and-exp> ::=<bit-or-exp>  || <bit-or-exp> <logical-and-exp-aux>
@@ -118,8 +122,20 @@ pub enum AstFunction {
 
 #[derive(Debug,PartialEq,Clone)]
 pub enum AstFunctionAux {
+    BlockItem(Box<AstBlockItem>),
+    BlockItemAux(Box<AstBlockItem>,Box<AstFunctionAux>),
+}
+
+#[derive(Debug,PartialEq,Clone)]
+pub enum AstBlockItem{
     Statement(Box<AstStatement>),
-    StatementAux(Box<AstStatement>,Box<AstFunctionAux>),
+    Declaration(Box<AstDeclaration>),
+}
+
+#[derive(Debug,PartialEq,Clone)]
+pub enum AstDeclaration {
+    Id(String),
+    IdAssignment(String, Box<AstExpression>),
 }
 
 //----------------------ASTStatement--------------------------------------------------
@@ -127,14 +143,20 @@ pub enum AstFunctionAux {
 pub enum AstStatement{
     ReturnExpression(Box<AstExpression>),
     Expression(Box<AstExpression>),
-    Id(String),
-    IdAssignment(String, Box<AstExpression>),
+    IfExpressionStatement(Box<AstExpression>,Box<AstStatement>),
+    IfExpressionStatementElseStatement(Box<AstExpression>,Box<AstStatement>,Box<AstStatement>),
 }
 
 #[derive(Debug,PartialEq,Clone)]
 pub enum AstExpression {
     IdExpression(String, Box<AstExpression>),
+    ConditionalExp(Box<AstConditionalExp>),
+}
+
+#[derive(Debug,PartialEq,Clone)]
+pub enum AstConditionalExp{
     LogicOrExp(Box<AstLogicOrExp>),
+    LogicOrExpExpConditionalExp(Box<AstLogicOrExp>, Box<AstExpression>, Box<AstConditionalExp>)
 }
 
 syntax_recursive!(AstLogicOrExp, AstLogicOrExpAux, LogicAndExp, LogicAndExpAux, AstLogicAndExp,

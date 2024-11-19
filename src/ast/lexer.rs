@@ -6,6 +6,8 @@ use std::collections::HashMap;
 pub enum Keyword{
     Int,
     Return,
+    If,
+    Else,
 }
 
 #[derive(Debug,PartialEq,Clone)]
@@ -39,6 +41,8 @@ pub enum TokenKind{
     BitShiftLeft,
     BitShiftRight,
     Modulo,
+    Colon,
+    QuestionMark,
     Bad,
 }
 
@@ -73,12 +77,19 @@ impl Token{
 
 pub struct Lexer<'a>{
     chars: Peekable<Chars<'a>>,
+    symbols: HashSet<char>,
+    keywords: HashMap<String,Keyword>,
 }
 
 impl <'a>Lexer<'a>{
     pub fn new(input: &'a str)-> Lexer{
         Lexer{
             chars: input.chars().peekable(),
+            symbols: HashSet::from(['{','}','(',')', ';','-','~','!','+','*','/','&','|','=','<','>','^','%','?',':']),
+            keywords: vec![
+                ("int".to_string(),Keyword::Int),("return".to_string(), Keyword::Return), ("if".to_string(), Keyword::If),
+                ("else".to_string(), Keyword::Else),
+                ].iter().cloned().collect(),
         }
     }
 
@@ -163,13 +174,18 @@ impl<'a> Iterator for Lexer<'a>{
             }
             '^' => {self.chars.next(); return Some(Token::new(TokenKind::BitXor))},
             '%' => {self.chars.next(); return Some(Token::new(TokenKind::Modulo))},
+            ':' => {self.chars.next(); return Some(Token::new(TokenKind::Colon))},
+            '?' => {self.chars.next(); return Some(Token::new(TokenKind::QuestionMark))},
             _ => {
-                let symbols=HashSet::from(['{','}','(',')', ';','-','~','!','+','*','/','&','|','=','<','>','^','%']);
-                let keywords:HashMap<_,_> = vec![("int".to_string(),Keyword::Int),("return".to_string(), Keyword::Return)].iter().cloned().collect();
+                //let symbols=HashSet::from(['{','}','(',')', ';','-','~','!','+','*','/','&','|','=','<','>','^','%']);
+                //let keywords:HashMap<_,_> = vec![
+                //    ("int".to_string(),Keyword::Int),("return".to_string(), Keyword::Return), ("if".to_string(), Keyword::If),
+                //    ("else".to_string(), Keyword::Else), ("elif".to_string(), Keyword::Elif),
+                //    ].iter().cloned().collect();
                 if current_char.is_numeric(){
                     let mut bad= false;
                     let mut num:usize =0;
-                    while !current_char.is_whitespace() && !symbols.contains(&current_char) {
+                    while !current_char.is_whitespace() && !self.symbols.contains(&current_char) {
                         if current_char.is_numeric(){
                             num*=10;
                             num+=current_char.to_digit(10).unwrap() as usize;
@@ -191,7 +207,7 @@ impl<'a> Iterator for Lexer<'a>{
                 else{
                     let mut bad=false;
                     let mut s=String::new();
-                    while !current_char.is_whitespace() && !symbols.contains(&current_char) {
+                    while !current_char.is_whitespace() && !self.symbols.contains(&current_char) {
                         if current_char.is_ascii_alphanumeric(){
                             s.push(*current_char);
                         }
@@ -207,8 +223,8 @@ impl<'a> Iterator for Lexer<'a>{
                     if bad{
                         return Some(Token::new(TokenKind::Bad));
                     }
-                    if keywords.contains_key(&s){
-                        return  Some(Token::new(TokenKind::Keyword(keywords[&s])));
+                    if self.keywords.contains_key(&s){
+                        return  Some(Token::new(TokenKind::Keyword(self.keywords[&s])));
                     }
                     return Some(Token::new(TokenKind::Identifier(s)));
                 }
@@ -316,4 +332,15 @@ mod tests {
     }
 
 
+    #[test]
+    fn lexer11() {
+        let input="if 14 ;;:??23:?elsehello else hello".to_string();
+        let lex=Lexer::new(&input);
+        let v:Vec<Token>=lex.collect();
+        assert_eq!(v,[Token::new(TokenKind::Keyword(Keyword::If)),Token::new(TokenKind::Number(14)), Token::new(TokenKind::Semicolon),Token::new(TokenKind::Semicolon),
+        Token::new(TokenKind::Colon), Token::new(TokenKind::QuestionMark),Token::new(TokenKind::QuestionMark),
+        Token::new(TokenKind::Number(23)), Token::new(TokenKind::Colon), Token::new(TokenKind::QuestionMark), Token::new(TokenKind::Identifier("elsehello".to_string())),
+        Token::new(TokenKind::Keyword(Keyword::Else)), Token::new(TokenKind::Identifier("hello".to_string())),
+        ]);
+    }
 }

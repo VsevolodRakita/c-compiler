@@ -49,9 +49,24 @@ impl Generator{
 
     fn generate_function_aux(&mut self, ast_function_aux: &AstFunctionAux)->String{
         match ast_function_aux {
-            AstFunctionAux::Statement(ast_statement) => self.generate_statement(ast_statement),
-            AstFunctionAux::StatementAux(ast_statement, ast_function_aux) => 
-                self.generate_statement(ast_statement)+&self.generate_function_aux(ast_function_aux),
+            AstFunctionAux::BlockItem(ast_block_item) => self.generate_block_item(ast_block_item),
+            AstFunctionAux::BlockItemAux(ast_block_item, ast_function_aux) => 
+            self.generate_block_item(ast_block_item)+&self.generate_function_aux(ast_function_aux),
+        }
+    }
+
+    fn generate_block_item(&mut self, ast_block_item: &AstBlockItem)->String{
+        match ast_block_item {
+            AstBlockItem::Statement(ast_statement) => self.generate_statement(ast_statement),
+            AstBlockItem::Declaration(ast_declaration) => self.generate_declaration(ast_declaration),
+        }
+    }
+
+    fn generate_declaration(&mut self, ast_declaration: &AstDeclaration)->String{
+        match ast_declaration {
+            AstDeclaration::Id(_) => "".to_string(),
+            AstDeclaration::IdAssignment(s, ast_expression) => self.generate_expression(ast_expression)+&"\tmov\t%rax, -".to_string()+
+            &(self.variables[s]*WORDSIZE).to_string()+&"(%rbp)\n",
         }
     }
 
@@ -60,9 +75,23 @@ impl Generator{
             AstStatement::ReturnExpression(ast_expression) => 
                 self.generate_expression(ast_expression)+&"\tjmp\t".to_string()+&self.end_label+&"\n".to_string(),
             AstStatement::Expression(ast_expression) => self.generate_expression(ast_expression),
-            AstStatement::Id(_) => "".to_string(),
-            AstStatement::IdAssignment(s, ast_expression) => self.generate_expression(ast_expression)+&"\tmov\t%rax, -".to_string()+
-                &(self.variables[s]*WORDSIZE).to_string()+&"(%rbp)\n",
+            AstStatement::IfExpressionStatement(ast_expression, ast_statement) => {
+                let end="_post_conditional".to_string()+&self.label_counter.to_string();
+                self.label_counter+=1;
+                let e1=self.generate_expression(ast_expression);
+                let e2 = self.generate_statement(ast_statement);
+                e1+"\tcmp\t$0, %rax\n\tje\t"+&end+"\n"+&e2+&end+":\n"
+            },
+            AstStatement::IfExpressionStatementElseStatement(ast_expression, ast_statement, ast_statement1) => {
+                let label = "_label".to_string()+&self.label_counter.to_string();
+                let end="_post_conditional".to_string()+&self.label_counter.to_string();
+                self.label_counter+=1;
+                let e1=self.generate_expression(ast_expression);
+                let e2 = self.generate_statement(ast_statement);
+                let e3 = self.generate_statement(ast_statement1);
+                e1+"\tcmp\t$0, %rax\n\tjne\t"+&label+"\n"+&e3+"\tjmp\t"+&end+"\n"+&label+":\n"+&e2+&end+":\n"
+            },
+            
         }
     }
 
@@ -70,7 +99,23 @@ impl Generator{
         match ast_expression {
             AstExpression::IdExpression(s, ast_expression) => self.generate_expression(ast_expression)+&"\tmov\t%rax, -".to_string()+
                 &(self.variables[s]*WORDSIZE).to_string()+&"(%rbp)\n",
-            AstExpression::LogicOrExp(ast_logic_or_exp) => self.generate_logical_or_expression(ast_logic_or_exp),
+            AstExpression::ConditionalExp(ast_conditional_exp) => self.generate_conditional_exp(ast_conditional_exp),
+        }
+    }
+
+    fn generate_conditional_exp(&mut self, ast_conditional_exp: &AstConditionalExp)->String{
+        match ast_conditional_exp {
+            AstConditionalExp::LogicOrExp(ast_logic_or_exp) => self.generate_logical_or_expression(ast_logic_or_exp),
+            AstConditionalExp::LogicOrExpExpConditionalExp(ast_logic_or_exp, ast_expression, ast_conditional_exp) => {
+                let label="_label".to_string()+&self.label_counter.to_string();
+                let end="_post_conditional".to_string()+&self.label_counter.to_string();
+                self.label_counter+=1;
+                let e1=self.generate_logical_or_expression(ast_logic_or_exp);
+                let e2 = self.generate_expression(ast_expression);
+                let e3 = self.generate_conditional_exp(ast_conditional_exp);
+                e1+&"\tcmp\t$0, %rax\n\tje\t".to_string()+&label+&"\n".to_string()+&e2+&"\tjmp\t".to_string()+&end+&"\n".to_string()+&label+&":\n".to_string()+
+                    &e3+&end+&":\n".to_string()
+            },
         }
     }
 
