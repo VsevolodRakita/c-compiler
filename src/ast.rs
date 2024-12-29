@@ -2,37 +2,44 @@
 <program> ::= <function>
 <function> ::= "int" <id> "(" ")" "{" <function-aux> "}"
 <function-aux> ::= <block-item>|| <block-item> <function-aux> 
-<block-item> ::= <statement> || <declaration>
+<block-item> ::= <statement> | <declaration>
 <decleration> ::= "int" <id>";" || "int" <id> "=" <expression>";"
-<statement> ::= "return" <expression> ";" || <expression> ";" ||  "if" "(" <expression> ")" <statement> || 
+<statement> ::= "return" <expression> ";" | <expression> ";" |  "if" "(" <expression> ")" <statement> | 
                 "if" "(" <expression> ")" <statement> "else" <statement>
-<expression> ::= <id> "=" <expression> || <conditional-exp>
-<conditional-exp> ::= <logical-or-exp>  || <logical-or-exp> "?" <expression> ":" <conditional-exp>
-<logical-or-exp> ::= <logical-and-exp> || <logical-and-exp> <logical-or-exp-aux>
-<logical-or-exp-aux> ::= "||" <logical-and-exp> ||  "||" <logical-and-exp><logical-or-exp-aux>
-<logical-and-exp> ::=<bit-or-exp>  || <bit-or-exp> <logical-and-exp-aux>
-<logical-and-exp-aux> ::= "&&"<bit-or-exp> || "&&"<bit-or-exp><logical-and-exp-aux>
-<bit-or-exp> ::= <bit-xor-exp> || <bit-xor-exp> <bit-or-exp-aux>
-<bit-or-exp-aux> ::= ("|")<bit-xor-exp> || ("|")<bit-xor-exp><bit-or-exp-aux>
-<bit-xor-exp> ::= <bit-and-exp> || <bit-and-exp> <bit-xor-exp-aux>
-<bit-xor-exp-aux> ::= ("^") <bit-and-exp> || ("^") <bit-and-exp><bit-xor-exp-aux>
+<expression> ::= <id> "=" <expression> | <conditional-exp>
+<conditional-exp> ::= <logical-or-exp>  | <logical-or-exp> "?" <expression> ":" <conditional-exp>
+<logical-or-exp> ::= <logical-and-exp> | <logical-and-exp> <logical-or-exp-aux>
+<logical-or-exp-aux> ::= "||" <logical-and-exp> |  "||" <logical-and-exp><logical-or-exp-aux>
+<logical-and-exp> ::=<bit-or-exp>  | <bit-or-exp> <logical-and-exp-aux>
+<logical-and-exp-aux> ::= "&&"<bit-or-exp> | "&&"<bit-or-exp><logical-and-exp-aux>
+<bit-or-exp> ::= <bit-xor-exp> | <bit-xor-exp> <bit-or-exp-aux>
+<bit-or-exp-aux> ::= ("|")<bit-xor-exp> | ("|")<bit-xor-exp><bit-or-exp-aux>
+<bit-xor-exp> ::= <bit-and-exp> | <bit-and-exp> <bit-xor-exp-aux>
+<bit-xor-exp-aux> ::= ("^") <bit-and-exp> | ("^") <bit-and-exp><bit-xor-exp-aux>
 <bit-and-exp> ::= <equality-exp>|| <equality-exp> <bit-and-exp-aux>
-<bit-and-exp-aux> ::= ("&") <equality-exp> || ("&") <equality-exp><bit-and-exp-aux>
+<bit-and-exp-aux> ::= ("&") <equality-exp> | ("&") <equality-exp><bit-and-exp-aux>
 <equality-exp> ::= <relational-exp> || <relational-exp> <equality-exp-aux>
-<equality-exp-aux> ::= ("!=" | "==") <relational-exp> || ("!=" | "==") <relational-exp><equality-exp-aux>
-<relational-exp> ::= <bit-shift-exp> || <bit-shift-exp> <relational-exp-aux>
-<relational-exp-aux> ::= ("<" | ">" | "<=" | ">=") <bit-shift-exp> || ("<" | ">" | "<=" | ">=") <bit-shift-exp><relational-exp-aux>
-<bit-shift-exp> ::= <additive-exp> || <additive-exp> <bit-shift-exp-aux>
-<bit-shift-exp-aux>::= ("<<"|">>") <additive-exp> || ("<<"|">>") <additive-exp><bit-shift-exp-aux>
-<additive-exp> ::= <term> || <term> <additive-exp-aux>
-<additive-exp-aux>::= ("+" | "-" ) <term> || ("+" | "-" ) <term> <additive-exp-aux>
-<term> ::= <factor> || <factor> <term-aux>
-<term-aux> ::=   ("*" | "/"| "%") <factor> || ("*" | "/"| "%") <factor> <term-aux>
+<equality-exp-aux> ::= ("!=" | "==") <relational-exp> | ("!=" | "==") <relational-exp><equality-exp-aux>
+<relational-exp> ::= <bit-shift-exp> | <bit-shift-exp> <relational-exp-aux>
+<relational-exp-aux> ::= ("<" | ">" | "<=" | ">=") <bit-shift-exp> | ("<" | ">" | "<=" | ">=") <bit-shift-exp><relational-exp-aux>
+<bit-shift-exp> ::= <additive-exp> | <additive-exp> <bit-shift-exp-aux>
+<bit-shift-exp-aux>::= ("<<"|">>") <additive-exp> | ("<<"|">>") <additive-exp><bit-shift-exp-aux>
+<additive-exp> ::= <term> | <term> <additive-exp-aux>
+<additive-exp-aux>::= ("+" | "-" ) <term> | ("+" | "-" ) <term> <additive-exp-aux>
+<term> ::= <factor> | <factor> <term-aux>
+<term-aux> ::=   ("*" | "/"| "%") <factor> | ("*" | "/"| "%") <factor> <term-aux>
 <factor> ::= "(" <expression> ")" | <unary_op> <factor> | <int> | <id>
 <unary_op> ::= "!" | "~" | "-"
+
+<block> ::=  "{" <function-aux> "}" | "{" "}"
+<statement> ::= "return" <expression> ";" | <expression> ";" |  "if" "(" <expression> ")" <statement> |
+                "if" "(" <expression> ")" <statement> "else" <statement> | <block>
+
+
 */
 
 use std::collections::HashMap;
+use std::collections::HashSet;
 
 pub mod lexer;
 pub mod parser;
@@ -70,20 +77,25 @@ macro_rules! syntax_recursive {
 }
 
 
+#[derive(Debug,PartialEq,Clone,Copy)]
+pub enum VariableStatus{
+    ThisBlockInitialized,
+    ThisBlockUninitialized,
+    ParentBlockInitialized,
+    ParentBlockUninitialized,
+}
 
 
 //----------------------AST----------------------------------------------------
 #[derive(Debug,PartialEq,Clone)]
 pub struct Ast{
     program: AstProgram,
-    variables: HashMap<String,bool>,
 }
 
 impl Ast {
-    pub fn new(program: AstProgram, variables: HashMap<String,bool>)->Self{
+    pub fn new(program: AstProgram)->Self{
         Self{
             program,
-            variables,
         }
     }
 
@@ -91,9 +103,6 @@ impl Ast {
         &self.program
     }
 
-    pub fn get_variables(&self)->HashMap<String,bool>{
-        self.variables.clone()
-    }
 }
 
 
@@ -116,8 +125,14 @@ impl AstProgram{
 }
 
 #[derive(Debug,PartialEq,Clone)]
-pub enum AstFunction {
-    IdFunctionAux(String, Box<AstFunctionAux>),
+pub enum AstFunction{
+    IdFunctionAux(String, Box<AstFunctionAux>, HashMap<String, VariableStatus>, HashSet<String>)
+}
+
+#[derive(Debug,PartialEq,Clone)]
+pub enum AstBlock{
+    EmptyBlock,
+    FunctionAux(Box<AstFunctionAux>, HashMap<String, VariableStatus>)
 }
 
 #[derive(Debug,PartialEq,Clone)]
@@ -145,6 +160,7 @@ pub enum AstStatement{
     Expression(Box<AstExpression>),
     IfExpressionStatement(Box<AstExpression>,Box<AstStatement>),
     IfExpressionStatementElseStatement(Box<AstExpression>,Box<AstStatement>,Box<AstStatement>),
+    Block(Box<AstBlock>),
 }
 
 #[derive(Debug,PartialEq,Clone)]

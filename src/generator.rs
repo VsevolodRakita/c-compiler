@@ -19,22 +19,29 @@ impl Generator{
     }
 
     pub fn generate_assembly(&mut self, ast: Ast)->String{
-        let mut ctr=1;
-        for (key,val) in ast.get_variables().iter(){
-            if *val{
-                self.variables.insert(key.clone(), ctr);
-                ctr+=1;
-            }
-            
-        }
         self.generate_program(ast.get_program())
     }
+
 
     fn generate_program(&mut self, program: &AstProgram)->String{
         self.generate_function(program.get_function())+"\n"
     }
 
     fn generate_function(&mut self, function: &AstFunction)->String{
+        self.variables=HashMap::new();
+        let AstFunction::IdFunctionAux(name, ast_function_aux, _, variable_set)=function;
+        let mut ctr: usize=1;
+        for var in variable_set{
+            self.variables.insert(var.clone(), ctr);
+            ctr+=1;
+        }
+        let prologue = "\t.global ".to_string()+name+"\n"+name+":\n\tpush\t%rbp\n\tmov\t%rsp, %rbp\n";
+        let variable_allocation = "\tadd\t$-".to_string()+&(self.variables.len()*WORDSIZE).to_string()+", %rsp\n";
+        let default_return_value = "\tmov\t$0, %rax\n".to_string()+&self.end_label+&":\n".to_string();
+        let varable_deallocation = "\tadd\t$".to_string()+&(self.variables.len()*WORDSIZE).to_string()+", %rsp\n";
+        let epilogue = "\tpop\t%rbp\n\tret\n".to_string();
+        prologue+&variable_allocation+&self.generate_function_aux(ast_function_aux)+&default_return_value+&varable_deallocation+&epilogue
+        /* 
         match function {
             AstFunction::IdFunctionAux(name, ast_function_aux) => {
                 let prologue = "\t.global ".to_string()+name+"\n"+name+":\n\tpush\t%rbp\n\tmov\t%rsp, %rbp\n";
@@ -44,7 +51,7 @@ impl Generator{
                 let epilogue = "\tpop\t%rbp\n\tret\n".to_string();
                 prologue+&variable_allocation+&self.generate_function_aux(ast_function_aux)+&default_return_value+&varable_deallocation+&epilogue
             },
-        }
+        }*/
     }
 
     fn generate_function_aux(&mut self, ast_function_aux: &AstFunctionAux)->String{
@@ -91,7 +98,14 @@ impl Generator{
                 let e3 = self.generate_statement(ast_statement1);
                 e1+"\tcmp\t$0, %rax\n\tjne\t"+&label+"\n"+&e3+"\tjmp\t"+&end+"\n"+&label+":\n"+&e2+&end+":\n"
             },
-            
+            AstStatement::Block(ast_block) => self.generate_block(ast_block),
+        }
+    }
+
+    fn generate_block(&mut self, ast_block: &AstBlock)->String{
+        match ast_block {
+            AstBlock::EmptyBlock => "".to_string(),
+            AstBlock::FunctionAux(ast_function_aux, _) => self.generate_function_aux(ast_function_aux),
         }
     }
 
@@ -418,4 +432,3 @@ mod tests {
         println!("{}",gen.generate_assembly(ast));
     }
 }
-
