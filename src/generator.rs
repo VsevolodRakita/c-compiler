@@ -40,7 +40,7 @@ impl Generator{
         let default_return_value = "\tmov\t$0, %rax\n".to_string()+&self.end_label+&":\n".to_string();
         let varable_deallocation = "\tadd\t$".to_string()+&(self.variables.len()*WORDSIZE).to_string()+", %rsp\n";
         let epilogue = "\tpop\t%rbp\n\tret\n".to_string();
-        prologue+&variable_allocation+&self.generate_function_aux(ast_function_aux)+&default_return_value+&varable_deallocation+&epilogue
+        prologue+&variable_allocation+&self.generate_function_aux(ast_function_aux,None, None)+&default_return_value+&varable_deallocation+&epilogue
         /* 
         match function {
             AstFunction::IdFunctionAux(name, ast_function_aux) => {
@@ -54,17 +54,17 @@ impl Generator{
         }*/
     }
 
-    fn generate_function_aux(&mut self, ast_function_aux: &AstFunctionAux)->String{
+    fn generate_function_aux(&mut self, ast_function_aux: &AstFunctionAux, break_label: Option<&String>, continue_label: Option<&String>)->String{
         match ast_function_aux {
-            AstFunctionAux::BlockItem(ast_block_item) => self.generate_block_item(ast_block_item),
+            AstFunctionAux::BlockItem(ast_block_item) => self.generate_block_item(ast_block_item, break_label, continue_label),
             AstFunctionAux::BlockItemAux(ast_block_item, ast_function_aux) => 
-            self.generate_block_item(ast_block_item)+&self.generate_function_aux(ast_function_aux),
+            self.generate_block_item(ast_block_item, break_label.clone(), continue_label.clone())+&self.generate_function_aux(ast_function_aux, break_label, continue_label),
         }
     }
 
-    fn generate_block_item(&mut self, ast_block_item: &AstBlockItem)->String{
+    fn generate_block_item(&mut self, ast_block_item: &AstBlockItem, break_label: Option<&String>, continue_label: Option<&String>)->String{
         match ast_block_item {
-            AstBlockItem::Statement(ast_statement) => self.generate_statement(ast_statement),
+            AstBlockItem::Statement(ast_statement) => self.generate_statement(ast_statement, break_label, continue_label),
             AstBlockItem::Declaration(ast_declaration) => self.generate_declaration(ast_declaration),
         }
     }
@@ -77,16 +77,17 @@ impl Generator{
         }
     }
 
-    fn generate_statement(&mut self, ast_statement: &AstStatement)->String{
+    fn generate_statement(&mut self, ast_statement: &AstStatement, break_label: Option<&String>, continue_label: Option<&String>)->String{
         match ast_statement {
             AstStatement::ReturnExpression(ast_expression) => 
                 self.generate_expression(ast_expression)+&"\tjmp\t".to_string()+&self.end_label+&"\n".to_string(),
-            AstStatement::Expression(ast_expression) => self.generate_expression(ast_expression),
+            AstStatement::ExpOptionSemicolon(ast_expression_option_semicolon) => 
+                self.generate_exp_option_semicolon(ast_expression_option_semicolon),
             AstStatement::IfExpressionStatement(ast_expression, ast_statement) => {
                 let end="_post_conditional".to_string()+&self.label_counter.to_string();
                 self.label_counter+=1;
                 let e1=self.generate_expression(ast_expression);
-                let e2 = self.generate_statement(ast_statement);
+                let e2 = self.generate_statement(ast_statement, break_label, continue_label);
                 e1+"\tcmp\t$0, %rax\n\tje\t"+&end+"\n"+&e2+&end+":\n"
             },
             AstStatement::IfExpressionStatementElseStatement(ast_expression, ast_statement, ast_statement1) => {
@@ -94,18 +95,140 @@ impl Generator{
                 let end="_post_conditional".to_string()+&self.label_counter.to_string();
                 self.label_counter+=1;
                 let e1=self.generate_expression(ast_expression);
-                let e2 = self.generate_statement(ast_statement);
-                let e3 = self.generate_statement(ast_statement1);
+                let e2 = self.generate_statement(ast_statement, break_label.clone(), continue_label.clone());
+                let e3 = self.generate_statement(ast_statement1, break_label, continue_label);
                 e1+"\tcmp\t$0, %rax\n\tjne\t"+&label+"\n"+&e3+"\tjmp\t"+&end+"\n"+&label+":\n"+&e2+&end+":\n"
             },
-            AstStatement::Block(ast_block) => self.generate_block(ast_block),
+            AstStatement::Block(ast_block) => self.generate_block(ast_block,break_label, continue_label),
+            AstStatement::For(ast_for) => self.generate_for(ast_for),
+            AstStatement::DoWhile(ast_do_while) => self.generate_do_while(ast_do_while),
+            AstStatement::While(ast_while) => self.generate_while(ast_while),
+            AstStatement::Break => {
+                match break_label {
+                    Some(label) => "jmp\t".to_string()+label+"\n",
+                    None => {println!("Compilation Failed! Encountered break outside control sequence.");"".to_string()},
+                }
+            },
+            AstStatement::Continue => {
+                match continue_label {
+                    Some(label) => "jmp\t".to_string()+label+"\n",
+                    None => {println!("Compilation Failed! Encountered continue outside control sequence.");"".to_string()},
+                }
+            },
         }
     }
 
-    fn generate_block(&mut self, ast_block: &AstBlock)->String{
+    fn generate_block(&mut self, ast_block: &AstBlock, break_label: Option<&String>, continue_label: Option<&String>)->String{
         match ast_block {
             AstBlock::EmptyBlock => "".to_string(),
-            AstBlock::FunctionAux(ast_function_aux, _) => self.generate_function_aux(ast_function_aux),
+            AstBlock::FunctionAux(ast_function_aux, _) => self.generate_function_aux(ast_function_aux,break_label,continue_label),
+        }
+    }
+/*
+    fn generate_for(&mut self, ast_for: &AstFor)->String{
+        let condition_label = "_condition_label".to_string()+&self.label_counter.to_string();
+        let post_exp_label = "_post_exp".to_string()+&self.label_counter.to_string();
+        let end_of_loop="_end_of_loop".to_string()+&self.label_counter.to_string();
+        self.label_counter+=1;
+        let initial_clause= match ast_for.initial_clause.clone() {
+            ForInitialClause::Declaration(ast_declaration) => self.generate_declaration(&ast_declaration),
+            ForInitialClause::NoDeclaration(ast_exp_option_semicolon) => 
+                self.generate_exp_option_semicolon(&ast_exp_option_semicolon),
+        };
+        let controlling_exp = match *ast_for.controlling_expression.clone() {
+            AstExpOptionSemicolon::ExpressionSemicolon(ast_expression) => 
+                self.generate_expression(&*ast_expression),
+            AstExpOptionSemicolon::EmptySemicolon => "mov\t$1,%rax\n".to_string(),
+        };
+        let post_exp = self.generate_exp_option_close_paren(&ast_for.post_expression);
+        let body = self.generate_statement(&ast_for.body,Some(&end_of_loop),Some(&post_exp_label));
+        initial_clause+&condition_label+":\n"+&controlling_exp+"\tcmp\t$0, %rax\n\tje\t"+&end_of_loop+"\n"+&body+&post_exp_label+
+                    ":\n"+&post_exp+"jmp\t"+&condition_label+"\n"+&end_of_loop+":\n"
+    }
+*/
+     
+    fn generate_for(&mut self, ast_for: &AstFor)->String{
+        match ast_for {
+            AstFor::NoDecl(ast_exp_option_semicolon, ast_exp_option_semicolon2, 
+                ast_exp_option_close_paren, ast_statement) => {
+                    let condition_label = "_condition_label".to_string()+&self.label_counter.to_string();
+                    let post_exp_label = "_post_exp".to_string()+&self.label_counter.to_string();
+                    let end_of_loop="_end_of_loop".to_string()+&self.label_counter.to_string();
+                    self.label_counter+=1;
+                    let initial_clause = self.generate_exp_option_semicolon(ast_exp_option_semicolon);
+                    let controlling_exp: String;
+                    if **ast_exp_option_semicolon2 == AstExpOptionSemicolon::EmptySemicolon{
+                        controlling_exp="mov\t$1,%rax\n".to_string();
+                    }
+                    else {
+                        controlling_exp=self.generate_exp_option_semicolon(ast_exp_option_semicolon2);
+                    }
+                    let post_exp = self.generate_exp_option_close_paren(ast_exp_option_close_paren);
+                    let body = self.generate_statement(ast_statement,Some(&end_of_loop),Some(&post_exp_label));
+                    initial_clause+&condition_label+":\n"+&controlling_exp+"\tcmp\t$0, %rax\n\tje\t"+&end_of_loop+"\n"+&body+&post_exp_label+
+                    ":\n"+&post_exp+"jmp\t"+&condition_label+"\n"+&end_of_loop+":\n"
+                },
+            AstFor::Decl(ast_declaration, ast_exp_option_semicolon, 
+                ast_exp_option_close_paren, ast_statement) => {
+                    let condition_label = "_condition_label".to_string()+&self.label_counter.to_string();
+                    let post_exp_label = "_post_exp".to_string()+&self.label_counter.to_string();
+                    let end_of_loop="_end_of_loop".to_string()+&self.label_counter.to_string();
+                    self.label_counter+=1;
+                    let initial_clause = self.generate_declaration(&ast_declaration);
+                    let controlling_exp: String;
+                    if **ast_exp_option_semicolon == AstExpOptionSemicolon::EmptySemicolon{
+                        controlling_exp="mov\t$1,%rax\n".to_string();
+                    }
+                    else {
+                        controlling_exp=self.generate_exp_option_semicolon(ast_exp_option_semicolon);
+                    }
+                    let post_exp = self.generate_exp_option_close_paren(ast_exp_option_close_paren);
+                    let body = self.generate_statement(ast_statement,Some(&end_of_loop),Some(&post_exp_label));
+                    initial_clause+&condition_label+":\n"+&controlling_exp+"\tcmp\t$0, %rax\n\tje\t"+&end_of_loop+"\n"+&body+&post_exp_label+
+                    ":\n"+&post_exp+"jmp\t"+&condition_label+"\n"+&end_of_loop+":\n"
+                },
+        }
+    }
+
+    fn generate_do_while(&mut self, ast_do_while: &AstDoWhile)->String{
+        match ast_do_while {
+            AstDoWhile::StatementExpression(ast_statement, ast_expression) => {
+                let beginning = "_pre_conditional".to_string()+&self.label_counter.to_string();
+                let beginning2 = beginning.clone();
+                let end="_post_conditional".to_string()+&self.label_counter.to_string();
+                self.label_counter+=1;
+                let e1 = self.generate_expression(ast_expression);
+                let e2 = self.generate_statement(ast_statement, Some(&end), Some(&beginning));
+                beginning+":\n"+&e2+&e1+"\tcmp\t$0, %rax\n\tje\t"+&end+"\n"+"jmp\t"+&beginning2+"\n"+&end+":\n"
+            },
+        }
+    }
+
+    fn generate_while(&mut self, ast_while: &AstWhile)->String{
+        match ast_while {
+            AstWhile::ExpressionStatement(ast_expression, ast_statement) => {
+                let beginning = "_pre_conditional".to_string()+&self.label_counter.to_string();
+                let beginning2 = beginning.clone();
+                let end="_post_conditional".to_string()+&self.label_counter.to_string();
+                self.label_counter+=1;
+                let e1 = self.generate_expression(ast_expression);
+                let e2 = self.generate_statement(ast_statement,Some(&end), Some(&beginning));
+                beginning+":\n"+&e1+"\tcmp\t$0, %rax\n\tje\t"+&end+"\n"+&e2+"\tjmp\t"+&beginning2+"\n"+&end+":\n"
+            },
+        }
+    }
+
+    fn generate_exp_option_semicolon(&mut self, ast_exp_option_semicolon: &AstExpOptionSemicolon)->String{
+        match ast_exp_option_semicolon{
+            AstExpOptionSemicolon::ExpressionSemicolon(ast_expression) => self.generate_expression(ast_expression),
+            AstExpOptionSemicolon::EmptySemicolon => "".to_string(),
+        } 
+    }
+
+    fn generate_exp_option_close_paren(&mut self, ast_exp_option_close_paren: &AstExpOptionCloseParen)->String{
+        match ast_exp_option_close_paren {
+            AstExpOptionCloseParen::ExpressionCloseParen(ast_expression) => self.generate_expression(ast_expression),
+            AstExpOptionCloseParen::EmptyCloseParen => "".to_string(),
         }
     }
 

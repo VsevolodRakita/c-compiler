@@ -8,6 +8,11 @@ pub enum Keyword{
     Return,
     If,
     Else,
+    For,
+    Do,
+    While,
+    Break,
+    Continue,
 }
 
 #[derive(Debug,PartialEq,Clone)]
@@ -88,7 +93,8 @@ impl <'a>Lexer<'a>{
             symbols: HashSet::from(['{','}','(',')', ';','-','~','!','+','*','/','&','|','=','<','>','^','%','?',':']),
             keywords: vec![
                 ("int".to_string(),Keyword::Int),("return".to_string(), Keyword::Return), ("if".to_string(), Keyword::If),
-                ("else".to_string(), Keyword::Else),
+                ("else".to_string(), Keyword::Else), ("for".to_string(), Keyword::For),("do".to_string(), Keyword::Do),
+                ("while".to_string(), Keyword::While),("break".to_string(), Keyword::Break),("continue".to_string(), Keyword::Continue)
                 ].iter().cloned().collect(),
         }
     }
@@ -177,11 +183,6 @@ impl<'a> Iterator for Lexer<'a>{
             ':' => {self.chars.next(); return Some(Token::new(TokenKind::Colon))},
             '?' => {self.chars.next(); return Some(Token::new(TokenKind::QuestionMark))},
             _ => {
-                //let symbols=HashSet::from(['{','}','(',')', ';','-','~','!','+','*','/','&','|','=','<','>','^','%']);
-                //let keywords:HashMap<_,_> = vec![
-                //    ("int".to_string(),Keyword::Int),("return".to_string(), Keyword::Return), ("if".to_string(), Keyword::If),
-                //    ("else".to_string(), Keyword::Else), ("elif".to_string(), Keyword::Elif),
-                //    ].iter().cloned().collect();
                 if current_char.is_numeric(){
                     let mut bad= false;
                     let mut num:usize =0;
@@ -341,6 +342,17 @@ mod tests {
         Token::new(TokenKind::Colon), Token::new(TokenKind::QuestionMark),Token::new(TokenKind::QuestionMark),
         Token::new(TokenKind::Number(23)), Token::new(TokenKind::Colon), Token::new(TokenKind::QuestionMark), Token::new(TokenKind::Identifier("elsehello".to_string())),
         Token::new(TokenKind::Keyword(Keyword::Else)), Token::new(TokenKind::Identifier("hello".to_string())),
+        ]);
+    }
+
+    #[test]
+    fn lexer12() {
+        let input="do { break; } while(1);".to_string();
+        let lex=Lexer::new(&input);
+        let v:Vec<Token>=lex.collect();
+        assert_eq!(v,[Token::new(TokenKind::Keyword(Keyword::Do)),Token::new(TokenKind::OpenBrace), Token::new(TokenKind::Keyword(Keyword::Break)),
+        Token::new(TokenKind::Semicolon), Token::new(TokenKind::CloseBrace), Token::new(TokenKind::Keyword(Keyword::While)), Token::new(TokenKind::OpenParenthesis),
+        Token::new(TokenKind::Number(1)), Token::new(TokenKind::CloseParenthesis), Token::new(TokenKind::Semicolon),
         ]);
     }
 }
