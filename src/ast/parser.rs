@@ -331,67 +331,22 @@ impl Parser {
             _ => return None
         }
     }
-/* 
-    fn parse_for(&mut self, variable_map: &mut HashMap<String, VariableStatus>, variable_set: &mut HashSet<String>)->Option<AstFor>{
-        let original_position=self.current_pos;
-        if self.current_pos+1<self.tokens.len() && !self.tokens[self.current_pos].is_identifier() && 
-        self.tokens[self.current_pos].get_kind()==TokenKind::Keyword(Keyword::For) && !self.tokens[self.current_pos+1].is_identifier() &&
-        self.tokens[self.current_pos+1].get_kind()==TokenKind::OpenParenthesis{
-            self.current_pos+=2;
-            let mut initial_clause_option= None;
-            if let Some(ast_exp_option_semicolon) = self.parse_exp_option_semicolon(variable_map, variable_set){
-                initial_clause_option=Some(ForInitialClause::NoDeclaration(Box::new(ast_exp_option_semicolon)));
-            }
-            else {
-                let mut variable_map2 = HashMap::new();
-                for (key,val) in variable_map.iter(){
-                    match val {
-                        VariableStatus::ThisBlockInitialized => {variable_map2.insert(key.clone(), VariableStatus::ParentBlockInitialized);},
-                        VariableStatus::ThisBlockUninitialized => {variable_map2.insert(key.clone(), VariableStatus::ParentBlockUninitialized);},
-                        VariableStatus::ParentBlockInitialized => {variable_map2.insert(key.clone(), VariableStatus::ParentBlockInitialized);},
-                        VariableStatus::ParentBlockUninitialized => {variable_map2.insert(key.clone(), VariableStatus::ParentBlockUninitialized);},
-                    }
-                }
-                if let Some(ast_decleration) = self.parse_decleration(&mut variable_map2, variable_set){
-                    initial_clause_option=Some(ForInitialClause::Declaration(Box::new(ast_decleration)));
-                }
-            }
-            if let Some(initial_clause)=initial_clause_option{
-                if let Some(ast_exp_option_semicolon) = self.parse_exp_option_semicolon(variable_map, variable_set){
-                    if let Some(ast_exp_option_close_paren) = self.parse_exp_option_close_paren(variable_map, variable_set){
-                        if let Some(ast_statement) = self.parse_statement(variable_map, variable_set){
-                            return Some(AstFor::new(initial_clause, 
-                                Box::new(ast_exp_option_semicolon), 
-                                Box::new(ast_exp_option_close_paren), 
-                                Box::new(ast_statement)));
-                        }
-                    }
-                }
-            }
-        }
-        self.current_pos=original_position;
-        None
-    }
 
-*/
     fn parse_for(&mut self, variable_map: &mut HashMap<String, VariableStatus>, variable_set: &mut HashSet<String>)->Option<AstFor>{
         let original_position=self.current_pos;
         if self.current_pos+1<self.tokens.len() && !self.tokens[self.current_pos].is_identifier() && 
         self.tokens[self.current_pos].get_kind()==TokenKind::Keyword(Keyword::For) && !self.tokens[self.current_pos+1].is_identifier() &&
         self.tokens[self.current_pos+1].get_kind()==TokenKind::OpenParenthesis{
             self.current_pos+=2;
-            if let Some(ast_exp_option_semicolon) = self.parse_exp_option_semicolon(variable_map, variable_set){
-                if let Some(ast_exp_option_semicolon2) = self.parse_exp_option_semicolon(variable_map, variable_set){
-                    if let Some(ast_exp_option_close_paren) = self.parse_exp_option_close_paren(variable_map, variable_set){
-                        if let Some(ast_statement) = self.parse_statement(variable_map, variable_set){
-                            return Some(AstFor::NoDecl(Box::new(ast_exp_option_semicolon), Box::new(ast_exp_option_semicolon2), 
-                            Box::new(ast_exp_option_close_paren), Box::new(ast_statement)));
-                        }
-                    }
-                }
+            let mut initial_clause_option=None;
+            let mut variable_map2;
+            let mut variable_map3=&mut HashMap::new();
+            if let Some(ast_exp_semicolon) = self.parse_exp_option_semicolon(variable_map, variable_set){
+                initial_clause_option= Some(AstInitialClause::NoDeclaration(Box::new(ast_exp_semicolon)));
+                variable_map3=variable_map;
             }
-            else {
-                let mut variable_map2 = HashMap::new();
+            else{
+                variable_map2 = HashMap::new();
                 for (key,val) in variable_map{
                     match val {
                         VariableStatus::ThisBlockInitialized => {variable_map2.insert(key.clone(), VariableStatus::ParentBlockInitialized);},
@@ -401,12 +356,19 @@ impl Parser {
                     }
                 }
                 if let Some(ast_decleration) = self.parse_decleration(&mut variable_map2, variable_set){
-                    if let Some(ast_exp_option_semicolon) = self.parse_exp_option_semicolon(&mut variable_map2, variable_set){
-                        if let Some(ast_exp_option_close_paren) = self.parse_exp_option_close_paren(&mut variable_map2, variable_set){
-                            if let Some(ast_statement) = self.parse_statement(&mut variable_map2, variable_set){
-                                return Some(AstFor::Decl(Box::new(ast_decleration), Box::new(ast_exp_option_semicolon), 
-                                Box::new(ast_exp_option_close_paren), Box::new(ast_statement)));
-                            }
+                    initial_clause_option= Some(AstInitialClause::Declaration(Box::new(ast_decleration)));
+                    variable_map3=&mut variable_map2;
+                }
+            }
+
+            if let Some(initial_clause) = initial_clause_option{
+                if let Some(controlling_expression) = self.parse_exp_option_semicolon(variable_map3, variable_set) {
+                    if let Some(post_expression) = self.parse_exp_option_close_paren(variable_map3, variable_set){
+                        if let Some(body) = self.parse_statement(variable_map3, variable_set){
+                            return Some(AstFor::new(Box::new(initial_clause), 
+                                Box::new(controlling_expression), 
+                                Box::new(post_expression), 
+                                Box::new(body)));
                         }
                     }
                 }
@@ -1028,6 +990,16 @@ mod tests {
         let mut pars=Parser::new(lex);
         let ast=pars.get_ast();
         //println!("{:?}",&ast);
+        assert!(ast.is_some());
+    }
+
+    #[test]
+    fn parser34(){
+        let input="int main(){return 1<2;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        println!("{:?}",&ast);
         assert!(ast.is_some());
     }
 }

@@ -5,8 +5,14 @@
 <block> ::=  "{" <function-aux> "}" | "{" "}"
 <block-item> ::= <statement> | <declaration>
 <decleration> ::= "int" <id>";" || "int" <id> "=" <expression>";"
-<statement> ::= "return" <expression> ";" | <expression> ";" |  "if" "(" <expression> ")" <statement> |
-                "if" "(" <expression> ")" <statement> "else" <statement> | <block>
+<statement> ::= "return" <expression> ";" | <exp-option-semicolon> |  "if" "(" <expression> ")" <statement> |
+                "if" "(" <expression> ")" <statement> "else" <statement> | <block> | <for> | <for-dec> |
+                <do-while> | <while> | "break" ";" | "continue" ";"
+<for> ::= "for" "(" (<exp-option-semicolon>|<declaration>) <exp-option-semicolon> <exp-option-close-paren> <statement>
+<do-while> ::= "do" <statement> "while" "(" <expression> ")" ";"
+<while> ::= "while" "(" <expression> ")" <statement>
+<exp-option-semicolon> ::= <expression> ";" | ";"
+<exp-option-close-paren> ::= <expression> ")" | ")"
 <expression> ::= <id> "=" <expression> | <conditional-exp>
 <conditional-exp> ::= <logical-or-exp>  | <logical-or-exp> "?" <expression> ":" <conditional-exp>
 <logical-or-exp> ::= <logical-and-exp> | <logical-and-exp> <logical-or-exp-aux>
@@ -31,20 +37,6 @@
 <term-aux> ::=   ("*" | "/"| "%") <factor> | ("*" | "/"| "%") <factor> <term-aux>
 <factor> ::= "(" <expression> ")" | <unary_op> <factor> | <int> | <id>
 <unary_op> ::= "!" | "~" | "-"
-
-<statement> ::= "return" <expression> ";" | <exp-option-semicolon> |  "if" "(" <expression> ")" <statement> |
-                "if" "(" <expression> ")" <statement> "else" <statement> | <block> | <for> | <for-dec> |
-                <do-while> | <while> | "break" ";" | "continue" ";"
-<for> ::= "for" "(<exp-option-semicolon> <exp-option-semicolon> <exp-option-close-paren> <statement>
-<for-dec> ::= "for" "("<declaration> <exp-option-semicolon> <exp-option-close-paren> <statement>
-<do-while> ::= "do" <statement> "while" "(" <expression> ")" ";"
-<while> ::= "while" "(" <expression> ")" <statement>
-<exp-option-semicolon> ::= <expression> ";" | ";"
-<exp-option-close-paren> ::= <expression> ")" | ")"
-
-<for> ::= "for" "(" (<exp-option-semicolon>|<declaration>) <exp-option-semicolon> <exp-option-close-paren> <statement>
-
-
 */
 
 use std::collections::HashMap;
@@ -177,28 +169,18 @@ pub enum AstStatement{
     Continue,
 }
 
-#[derive(Debug,PartialEq,Clone)]
-pub enum AstFor{
-    NoDecl(Box<AstExpOptionSemicolon>,Box<AstExpOptionSemicolon>,Box<AstExpOptionCloseParen>,Box<AstStatement>),
-    Decl(Box<AstDeclaration>,Box<AstExpOptionSemicolon>,Box<AstExpOptionCloseParen>,Box<AstStatement>)
-}
+
 
 #[derive(Debug,PartialEq,Clone)]
-pub enum ForInitialClause {
-    Declaration(Box<AstDeclaration>),
-    NoDeclaration(Box<AstExpOptionSemicolon>)
-}
-/* 
-#[derive(Debug,PartialEq,Clone)]
 pub struct AstFor{
-    pub initial_clause: ForInitialClause,
+    pub initial_clause: Box<AstInitialClause>,
     pub controlling_expression: Box<AstExpOptionSemicolon>,
     pub post_expression: Box<AstExpOptionCloseParen>,
     pub body: Box<AstStatement>,
 }
 
 impl AstFor {
-    pub fn new(initial_clause: ForInitialClause, controlling_expression: Box<AstExpOptionSemicolon>, post_expression: Box<AstExpOptionCloseParen>,
+    pub fn new(initial_clause: Box<AstInitialClause>, controlling_expression: Box<AstExpOptionSemicolon>, post_expression: Box<AstExpOptionCloseParen>,
     body: Box<AstStatement>) -> Self{
         AstFor{
             initial_clause,
@@ -208,7 +190,12 @@ impl AstFor {
         }
     }
 }
-*/
+
+#[derive(Debug,PartialEq,Clone)]
+pub enum AstInitialClause {
+    NoDeclaration(Box<AstExpOptionSemicolon>),
+    Declaration(Box<AstDeclaration>),
+}
 #[derive(Debug,PartialEq,Clone)]
 pub enum AstDoWhile{
     StatementExpression(Box<AstStatement>,Box<AstExpression>),
