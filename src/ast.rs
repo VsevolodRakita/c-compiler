@@ -1,6 +1,9 @@
 /*
-<program> ::= <function>
-<function> ::= "int" <id> "(" ")" "{" <function-aux> "}"
+<program> ::= <program-aux>
+<program-aux> ::= <function> <program-aux> | <function-decleration> <program-aux>
+<function-decleration> ::= "int" <id> "(" ")" ";" | "int" <id> "(" <arguments> ")" ";"
+<function> ::= "int" <id> "(" ")" "{" <function-aux> "}" | "int" <id> "(" <arguments> ")" "{" <function-aux> "}"
+<arguments> ::= "int" <id> | "int" <id>, <arguments>
 <function-aux> ::= <block-item>|| <block-item> <function-aux> 
 <block> ::=  "{" <function-aux> "}" | "{" "}"
 <block-item> ::= <statement> | <declaration>
@@ -35,7 +38,9 @@
 <additive-exp-aux>::= ("+" | "-" ) <term> | ("+" | "-" ) <term> <additive-exp-aux>
 <term> ::= <factor> | <factor> <term-aux>
 <term-aux> ::=   ("*" | "/"| "%") <factor> | ("*" | "/"| "%") <factor> <term-aux>
-<factor> ::= "(" <expression> ")" | <unary_op> <factor> | <int> | <id>
+<factor> ::= <function-call> | "(" <expression> ")" | <unary_op> <factor> | <int> | <id>
+<function-call> ::= <id> "(" ")" | <id> "(" <function-call-aux> ")"
+<function-call-aux> ::= <expression> | <expression> "," <function-call-aux>
 <unary_op> ::= "!" | "~" | "-"
 */
 
@@ -77,7 +82,7 @@ macro_rules! syntax_recursive {
     };
 }
 
-
+///An enum for variable maps, to keep track of whether a variable has been initialized and which block it belongs to.
 #[derive(Debug,PartialEq,Clone,Copy)]
 pub enum VariableStatus{
     ThisBlockInitialized,
@@ -110,24 +115,54 @@ impl Ast {
 //----------------------ASTProgram--------------------------------------------------
 #[derive(Debug,PartialEq,Clone)]
 pub struct AstProgram{
-    function: AstFunction,
+    functions_map: HashMap<String,FunctionStatus>,
 }
 
 impl AstProgram{
-    pub fn new(function: AstFunction)->Self{
+    pub fn new(functions_map: HashMap<String,FunctionStatus>)->Self{
         Self{
-            function
+            functions_map,
         }
     }
 
-    pub fn get_function(&self)->&AstFunction{
-        &self.function
+    pub fn get_map(&self)->&HashMap<String,FunctionStatus>{
+        &self.functions_map
+    }
+}
+
+/// An enum for the functions map in `AstProgram`. Indicates whether the function has been declared or implemented.
+/// If it has been declared, keeps track of how many variables it takes. If it has been implemented, keeps the associated
+/// `AstFunction`.
+#[derive(Debug,PartialEq,Clone)]
+pub enum FunctionStatus{
+    Declared(usize),
+    Implemented(AstFunction),
+}
+
+#[derive(Debug,PartialEq,Clone)]
+pub enum AstFunctionDeclaration {
+    IntId(String),
+    IntIdArguments(String,Box<AstArguments>),
+}
+
+#[derive(Debug,PartialEq,Clone)]
+pub struct AstFunction{
+    pub identifier: String,
+    pub argument_list: Vec<String>,
+    pub variable_set: HashSet<String>,
+    pub body: AstFunctionAux,
+}
+
+impl AstFunction{
+    pub fn new(identifier: String, argument_list: Vec<String>, variable_set: HashSet<String>, body: AstFunctionAux)->Self{
+        Self { identifier, argument_list, variable_set, body}
     }
 }
 
 #[derive(Debug,PartialEq,Clone)]
-pub enum AstFunction{
-    IdFunctionAux(String, Box<AstFunctionAux>, HashMap<String, VariableStatus>, HashSet<String>)
+pub enum AstArguments {
+    IntId(String),
+    IntIdArguments(String, Box<AstArguments>),
 }
 
 #[derive(Debug,PartialEq,Clone)]
@@ -265,15 +300,24 @@ syntax_recursive!(AstTerm, AstTermAux, Factor, FactorAux, AstFactor,
 
 #[derive(Debug,PartialEq,Clone)]
 pub enum AstFactor{
+    FunctionCall(Box<AstFunctionCall>),
     Expression(Box<AstExpression>),
     UnaryOpFactor(AstUnaryOp,Box<AstFactor>),
     Int(usize),
     Id(String),
 }
 
+#[derive(Debug,PartialEq,Clone)]
+pub struct AstFunctionCall{
+    pub id: String,
+    pub arguments: Vec<AstExpression>,
+}
 
-
-
+impl AstFunctionCall{
+    pub fn new(id: String, arguments: Vec<AstExpression>)->Self{
+        Self { id, arguments,}
+    }
+}
 
 //----------------------ASTUnaryOp--------------------------------------------------
 #[derive(Debug,PartialEq,Clone,Copy)]

@@ -9,6 +9,7 @@ use super::*;
 pub struct Parser{
     tokens: Vec<Token>,
     current_pos: usize,
+    functions_map: HashMap<String,FunctionStatus>,
 }
 
 /// Macro for parsing recursive rules similar to
@@ -67,6 +68,7 @@ impl Parser {
         Self{
             tokens: lex.collect(),
             current_pos: 0,
+            functions_map: HashMap::new(),
         }
     }
 
@@ -82,35 +84,109 @@ impl Parser {
     }
 
     fn parse_program(&mut self)->Option<AstProgram>{
-        match self.parse_function() {
-            Some(function)=> Some(AstProgram::new(function)),
-            None => None,
+        self.parse_program_aux();
+        if self.functions_map.len()==0{
+            return None;
         }
+        Some(AstProgram::new(self.functions_map.clone()))
     }
 
-    fn parse_function(&mut self)->Option<AstFunction>{
-        let original_index=self.current_pos;
-        if self.current_pos+4>=self.tokens.len()||self.tokens[self.current_pos].get_kind()!=TokenKind::Keyword(Keyword::Int) || 
-            !self.tokens[self.current_pos+1].is_identifier() || self.tokens[self.current_pos+2].get_kind()!=TokenKind::OpenParenthesis ||
-            self.tokens[self.current_pos+3].get_kind()!=TokenKind::CloseParenthesis || self.tokens[self.current_pos+4].get_kind()!=TokenKind::OpenBrace{
-                return None;
-        }
-        let func_name=self.tokens[self.current_pos+1].get_identifier().unwrap();
-        self.current_pos+=5;
-        let mut variable_map = HashMap::new();
-        let mut variable_set = HashSet::new();
-        match self.parse_function_aux(&mut variable_map, &mut variable_set) {
-            Some(function_aux)=> {
-                if !self.parser_finished() && !self.tokens[self.current_pos].is_identifier() && self.tokens[self.current_pos].get_kind()==TokenKind::CloseBrace{
-                    return Some(AstFunction::IdFunctionAux(func_name, Box::new(function_aux), variable_map, variable_set));
-                }
-                else{
-                    self.current_pos=original_index;
-                    return None;
+    fn parse_program_aux(&mut self){
+        if self.current_pos+2<self.tokens.len() && !self.tokens[self.current_pos].is_identifier() && 
+        self.tokens[self.current_pos].get_kind()==TokenKind::Keyword(Keyword::Int) && self.tokens[self.current_pos+1].is_identifier() &&
+        !self.tokens[self.current_pos+2].is_identifier() && self.tokens[self.current_pos+2].get_kind()==TokenKind::OpenParenthesis{
+            let s= self.tokens[self.current_pos+1].get_identifier().unwrap();
+            self.current_pos+=3;
+            if let Some((mut variable_map,mut variable_set, argument_list))=self.parse_arguments(){
+                if self.current_pos+1<self.tokens.len() && !self.tokens[self.current_pos].is_identifier() && 
+                self.tokens[self.current_pos].get_kind()==TokenKind::CloseParenthesis && !self.tokens[self.current_pos+1].is_identifier(){
+                    self.current_pos+=1;
+                    match self.tokens[self.current_pos].get_kind() {
+                        TokenKind::Semicolon =>{
+                            self.current_pos+=1;
+                            if self.functions_map.contains_key(&s){
+                                println!("Compilation Failed! Double definition of function {s}.");
+                                self.tokens[self.current_pos]=Token::new(TokenKind::Bad);
+                            }
+                            else{
+                                self.functions_map.insert(s, FunctionStatus::Declared(variable_set.len()));
+                                self.parse_program_aux();
+                            }
+                        },
+                        TokenKind::OpenBrace =>{
+                            self.current_pos+=1;
+                            let number_of_arguments = variable_set.len();
+                            if let Some(ast_function_aux) = self.parse_function_aux(&mut variable_map, &mut variable_set){
+                                if !self.parser_finished() && !self.tokens[self.current_pos].is_identifier() && 
+                                self.tokens[self.current_pos].get_kind()==TokenKind::CloseBrace{
+                                    self.current_pos+=1;
+                                    if let Some(FunctionStatus::Implemented(_)) = self.functions_map.get(&s) {
+                                        println!("Compilation Failed! Double implementation of function {s}.");
+                                        self.tokens[self.current_pos]=Token::new(TokenKind::Bad);
+                                        return;
+                                    }
+                                    if let Some(FunctionStatus::Declared(x)) = self.functions_map.get(&s){
+                                        if number_of_arguments!=*x{
+                                            println!("Compilation Failed! Wrong arguments in implementation of function {s}.");
+                                            self.tokens[self.current_pos]=Token::new(TokenKind::Bad);
+                                            return;
+                                        }
+                                    }
+                                    self.functions_map.insert(s.clone(), FunctionStatus::Implemented(AstFunction::new(
+                                        s,
+                                        argument_list,
+                                        variable_set,
+                                        ast_function_aux,
+                                    )));
+                                    self.parse_program_aux();
+                                }
+                            }
+
+
+                        },
+                        _ => (),
+                    }
                 }
             }
-            None => {self.current_pos=original_index; return None;}
+
         }
+
+    }
+
+    fn parse_arguments(&mut self)->Option<(HashMap<String, VariableStatus>,HashSet<String>,Vec<String>)>{
+        let original_index=self.current_pos;
+        let mut variable_map = HashMap::new();
+        let mut variable_set = HashSet::new();
+        let mut argument_list = Vec::new();
+        while self.current_pos+1<self.tokens.len() && !self.tokens[self.current_pos].is_identifier() && 
+            self.tokens[self.current_pos].get_kind()==TokenKind::Keyword(Keyword::Int) && self.tokens[self.current_pos+1].is_identifier(){
+                let s = self.tokens[self.current_pos+1].get_identifier().unwrap();
+                if variable_set.contains(&s){
+                    println!("Compilation Failed! Double definition of argument {s}.");
+                    self.tokens[self.current_pos]=Token::new(TokenKind::Bad);
+                    return None;
+                }
+                variable_set.insert(s.clone());
+                argument_list.push(s.clone());
+                variable_map.insert(s, VariableStatus::ThisBlockInitialized);
+                self.current_pos+=2;
+                if !self.parser_finished() && !self.tokens[self.current_pos].is_identifier() && 
+                    self.tokens[self.current_pos].get_kind()==TokenKind::Comma{
+                        self.current_pos+=1;
+                        continue;
+                }
+                if !self.parser_finished() && !self.tokens[self.current_pos].is_identifier() && 
+                    self.tokens[self.current_pos].get_kind()==TokenKind::CloseParenthesis{
+                        return Some((variable_map, variable_set,argument_list));
+                }
+                self.current_pos=original_index;
+                return None;
+        }
+        if !self.parser_finished() && !self.tokens[self.current_pos].is_identifier() && self.tokens[self.current_pos].get_kind()==TokenKind::CloseParenthesis{
+            return Some((variable_map, variable_set,argument_list));
+        }
+        self.current_pos=original_index;
+        None
     }
 
     fn parse_block(&mut self, variable_map: &mut HashMap<String, VariableStatus>, variable_set: &mut HashSet<String>)->Option<AstBlock>{
@@ -191,8 +267,16 @@ impl Parser {
                             }
                             if let Some(x)=variable_map.get(&prev){
                                 match *x {
-                                    VariableStatus::ThisBlockInitialized => {println!("{}", "Compilation Failed! Double decleration of variable ".to_string()+&s); return None},
-                                    VariableStatus::ThisBlockUninitialized => {println!("{}", "Compilation Failed! Double decleration of variable ".to_string()+&s); return None},
+                                    VariableStatus::ThisBlockInitialized => {
+                                        println!("{}", "Compilation Failed! Double decleration of variable ".to_string()+&s);
+                                        self.tokens[self.current_pos]=Token::new(TokenKind::Bad); 
+                                        return None
+                                    },
+                                    VariableStatus::ThisBlockUninitialized => {
+                                        println!("{}", "Compilation Failed! Double decleration of variable ".to_string()+&s);
+                                        self.tokens[self.current_pos]=Token::new(TokenKind::Bad); 
+                                        return None
+                                    },
                                     _=> (),
                                 }
                                 variable_map.insert(curr.clone(), VariableStatus::ThisBlockUninitialized);
@@ -223,9 +307,17 @@ impl Parser {
                                     if let Some(x) = variable_map.get(&prev) {
                                         match *x {
                                             VariableStatus::ThisBlockInitialized => 
-                                                {println!("{}", "Compilation Failed! Double decleration of variable ".to_string()+&s); return None},
+                                                {
+                                                    println!("{}", "Compilation Failed! Double decleration of variable ".to_string()+&s);
+                                                    self.tokens[self.current_pos]=Token::new(TokenKind::Bad);
+                                                    return None
+                                                },
                                             VariableStatus::ThisBlockUninitialized => 
-                                                {println!("{}", "Compilation Failed! Double decleration of variable ".to_string()+&s); return None},
+                                                {
+                                                    println!("{}", "Compilation Failed! Double decleration of variable ".to_string()+&s);
+                                                    self.tokens[self.current_pos]=Token::new(TokenKind::Bad); 
+                                                    return None
+                                                },
                                             _ => (),
                                         }
                                         variable_map.insert(curr.clone(), VariableStatus::ThisBlockInitialized);
@@ -586,6 +678,9 @@ impl Parser {
         if self.parser_finished(){
             return None;
         }
+        if let Some(ast_function_call) = self.parse_function_call(variable_map, variable_set){
+            return Some(AstFactor::FunctionCall(Box::new(ast_function_call)));
+        }
         if let Some(op)=self.parse_unaryop(){
             if let Some(fact)=self.parse_factor(variable_map, variable_set){
                 return Some(AstFactor::UnaryOpFactor(op, Box::new(fact)));
@@ -632,6 +727,49 @@ impl Parser {
             }
             _ => return None,
         }
+    }
+
+    fn parse_function_call(&mut self, variable_map: &mut HashMap<String, VariableStatus>, variable_set: &mut HashSet<String>)->Option<AstFunctionCall>{
+        let original_position=self.current_pos;
+        if self.current_pos+2<self.tokens.len() && self.tokens[self.current_pos].is_identifier() && 
+        self.tokens[self.current_pos+1].get_kind()==TokenKind::OpenParenthesis{
+            let function_id = self.tokens[self.current_pos].get_identifier().unwrap();
+            if !self.functions_map.contains_key(&function_id){
+                println!("Compilation Failed! Calling undefined function {function_id}.");
+                self.tokens[self.current_pos]=Token::new(TokenKind::Bad);
+                return None;
+            }
+            self.current_pos+=2;
+            let mut arguments= Vec::new();
+            while let Some(ast_expression)=self.parse_expression(variable_map, variable_set){
+                arguments.push(ast_expression);
+                if !self.parser_finished() && !self.tokens[self.current_pos].is_identifier() && self.tokens[self.current_pos].get_kind()==TokenKind::Comma{
+                    self.current_pos+=1;
+                    continue;
+                }
+            }
+            if !self.parser_finished() && !self.tokens[self.current_pos].is_identifier() && 
+            self.tokens[self.current_pos].get_kind()==TokenKind::CloseParenthesis{
+                match self.functions_map.get(&function_id).unwrap(){
+                    FunctionStatus::Declared(number_of_arguments) => {
+                        if *number_of_arguments!=arguments.len(){
+                            println!("Compilation Failed! Wrong number of arguments to function {function_id}.");
+                            self.tokens[self.current_pos]=Token::new(TokenKind::Bad);
+                        }
+                    },
+                    FunctionStatus::Implemented(ast_function) => {
+                        if ast_function.argument_list.len()!=arguments.len(){
+                            println!("Compilation Failed! Wrong number of arguments to function {function_id}.");
+                            self.tokens[self.current_pos]=Token::new(TokenKind::Bad);
+                        }
+                    },
+                }
+                self.current_pos+=1;
+                return Some(AstFunctionCall::new(function_id, arguments));
+            }
+        }
+        self.current_pos=original_position;
+        None
     }
 
     fn parse_unaryop(&mut self)->Option<AstUnaryOp>{
@@ -999,7 +1137,57 @@ mod tests {
         let lex=Lexer::new(&input);
         let mut pars=Parser::new(lex);
         let ast=pars.get_ast();
-        println!("{:?}",&ast);
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+    }
+
+    #[test]
+    fn parser35(){
+        let input="int foo(); int main(){return 1<2;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+    }
+
+    #[test]
+    fn parser36(){
+        let input="int foo(); int main(){return foo();} int foo(){return 5;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+    }
+
+    #[test]
+    fn parser37(){
+        let input="int foo(int a); int main(){return foo(3);} int foo(int b){return b+2;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+    }
+
+    #[test]
+    fn parser38(){
+        let input="int foo(int a, int b); int main(){return foo(3,2);} int foo(int b, int c){return b+c;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
+        assert!(ast.is_some());
+    }
+
+    #[test]
+    fn parser39(){
+        let input="int foo(int a, int b); int bar(int a); int main(){return foo(3,2)+bar(5);} int foo(int b, int c){return b+c;}";
+        let lex=Lexer::new(&input);
+        let mut pars=Parser::new(lex);
+        let ast=pars.get_ast();
+        //println!("{:?}",&ast);
         assert!(ast.is_some());
     }
 }

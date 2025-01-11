@@ -13,6 +13,7 @@ for %%x in (.\tests\*.s) do (
 	echo running %%x
 	.\tests\%%~nx 
 	echo test %%~nx: !errorlevel!>>.\tests\results.txt
+	.\tests\%%~nx>>.\tests\results.txt
 )
 del .\tests\*.s
 del .\tests\*.exe

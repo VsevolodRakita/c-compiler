@@ -48,6 +48,7 @@ pub enum TokenKind{
     Modulo,
     Colon,
     QuestionMark,
+    Comma,
     Bad,
 }
 
@@ -90,7 +91,7 @@ impl <'a>Lexer<'a>{
     pub fn new(input: &'a str)-> Lexer{
         Lexer{
             chars: input.chars().peekable(),
-            symbols: HashSet::from(['{','}','(',')', ';','-','~','!','+','*','/','&','|','=','<','>','^','%','?',':']),
+            symbols: HashSet::from(['{','}','(',')', ';','-','~','!','+','*','/','&','|','=','<','>','^','%','?',':', ',']),
             keywords: vec![
                 ("int".to_string(),Keyword::Int),("return".to_string(), Keyword::Return), ("if".to_string(), Keyword::If),
                 ("else".to_string(), Keyword::Else), ("for".to_string(), Keyword::For),("do".to_string(), Keyword::Do),
@@ -182,6 +183,7 @@ impl<'a> Iterator for Lexer<'a>{
             '%' => {self.chars.next(); return Some(Token::new(TokenKind::Modulo))},
             ':' => {self.chars.next(); return Some(Token::new(TokenKind::Colon))},
             '?' => {self.chars.next(); return Some(Token::new(TokenKind::QuestionMark))},
+            ',' => {self.chars.next(); return Some(Token::new(TokenKind::Comma))},
             _ => {
                 if current_char.is_numeric(){
                     let mut bad= false;
