@@ -1,3 +1,7 @@
+/// Implements a parser.
+/// The struct `Parser` gets a `Lexer` (see ast\lexer.rs) and transforms it into an `Ast` that should then
+/// be passed to `Tac`.
+
 use lexer::{Keyword, Token, TokenKind};
 
 use std::collections::HashMap;

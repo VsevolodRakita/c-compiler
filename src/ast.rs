@@ -109,6 +109,9 @@ impl Ast {
         &self.program
     }
 
+    pub fn get_program_and_consume(self)->AstProgram{
+        self.program
+    }
 }
 
 
@@ -127,6 +130,10 @@ impl AstProgram{
 
     pub fn get_map(&self)->&HashMap<String,FunctionStatus>{
         &self.functions_map
+    }
+
+    pub fn get_map_and_consume(self)->HashMap<String,FunctionStatus>{
+        self.functions_map
     }
 }
 

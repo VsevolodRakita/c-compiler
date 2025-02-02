@@ -1,3 +1,7 @@
+/// Implements a lexer.
+/// The struct `Lexer` gets a string representing a .c file, and transforms it into a stream of `Token` for use by the `Parser`
+/// (see ast/parse.rs for details).
+
 use std::{iter::Peekable, str::Chars};
 use std::collections::HashSet;
 use std::collections::HashMap;

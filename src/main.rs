@@ -9,10 +9,12 @@ use std::io::{Read, Write};
 use ast::lexer::Lexer;
 use ast::parser::Parser;
 use generator::Generator;
+use tac::TacGenerator;
 
 
 pub mod ast;
 pub mod generator;
+pub mod tac;
 
 fn main(){
     let mut args=env::args();
@@ -24,8 +26,12 @@ fn main(){
     let mut parser = Parser::new(Lexer::new(&s));
     
     if let Some(ast)=parser.get_ast(){
-        let mut generator=Generator::new();
-        let asm=generator.generate_assembly(ast);
+        let mut tac = TacGenerator::new();
+        tac.convert_ast_to_tac(ast);
+        let generator=Generator::new();
+        //println!("---------\n{:?}------\n\n\n", tac);
+        let commands = tac.get_command_lists_and_consume();
+        let asm=generator.generate_assembly(commands);
         let path2=match args.next() {
             Some(s) => s,
             None => {
