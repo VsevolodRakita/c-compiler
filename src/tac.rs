@@ -1,6 +1,6 @@
 /// Implements an intermediate step between an `Ast` (see ast.rs) and an asl generator (see generator.rs).
 /// `TacGenerator` gets an `Ast` and returnes a vector of pairs, each representing an implemented function.
-/// This vector is for use with the struct `Generator` implemented in generator.rs.
+/// This vector is for use with the struct `generator::Generator` or `optimizer::Optimizer`.
 /*
 program = Program(function_definition*)
 function_definition = Function(identifier, identifier* params, instruction* body)
@@ -60,6 +60,8 @@ pub enum TacUnaryCommand{
 #[derive(Debug,PartialEq,Clone)]
 pub enum TacCommand{
     PlaceHolder,
+    Pass,
+    Bad,
     FunctionStart(String,Vec<String>),//FunctionStart(id, arguments)
     FunctionEnd,
     Jump(String),
@@ -93,7 +95,7 @@ impl TacGenerator {
         let map = ast.get_program_and_consume().get_map_and_consume();
         for (_, func) in map{
             match func {
-                FunctionStatus::Declared(_) => continue,
+                FunctionStatus::Declared(_) => (),
                 FunctionStatus::Implemented(ast_function) => self.generate_function(ast_function),
             }
         }
@@ -114,9 +116,11 @@ impl TacGenerator {
                     }
                 },
                 TacCommand::FunctionEnd => {
+                    curr_function_commands.push(command);
                     ans.push((curr_function_commands,curr_function_variables));
                     curr_function_variables = HashSet::new();
                     curr_function_commands = Vec::new();
+                    continue;
                 },
                 TacCommand::Return(tac_value) => {
                     if let TacValue::Variable(s) = tac_value{

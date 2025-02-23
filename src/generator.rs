@@ -75,6 +75,8 @@ impl Generator {
     fn generate_command(&self, command: TacCommand, variable_location_map: &HashMap<String, VariableLocation>, function_end_label: &String)->String{
         match command {
             TacCommand::PlaceHolder => panic!("Shouldn't be placeholders here!"),
+            TacCommand::Pass => "".to_string(),
+            TacCommand::Bad => panic!("Compilation Failed! Invalid constant."),
             TacCommand::FunctionStart(_, _) => panic!("Function start is handled in generate_function."),
             TacCommand::FunctionEnd => "".to_string(),
             TacCommand::Jump(label) => "\tjmp\t".to_string()+&label+"\n",
